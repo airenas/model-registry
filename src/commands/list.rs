@@ -140,14 +140,14 @@ impl Command for List {
         }
 
         writeln!(out)?;
-        write_table(out, &rows)?;
+        write_table_with(out, &rows, Some(console::Style::new().bold()))?;
         if !versions.tags.is_empty() {
             let mut tags = vec![["TAG", "VERSION", "CREATED"].map(String::from).to_vec()];
             for (name, t) in &versions.tags {
                 tags.push(vec![name.clone(), t.version.clone(), t.created_at.clone()]);
             }
             writeln!(out)?;
-            write_table(out, &tags)?;
+            write_table_with(out, &tags, Some(console::Style::new().bold()))?;
         }
         Ok(())
     }
@@ -219,7 +219,7 @@ fn show_version(
         rows.push(row);
     }
     writeln!(out)?;
-    write_table_with(out, &rows, true)?;
+    write_table_with(out, &rows, Some(console::Style::new().italic()))?;
     Ok(())
 }
 
@@ -300,14 +300,14 @@ fn lbl(label: &str) -> String {
 }
 
 fn write_table(out: &mut dyn Write, rows: &[Vec<String>]) -> std::io::Result<()> {
-    write_table_with(out, rows, false)
+    write_table_with(out, rows, None)
 }
 
-/// With `italic_first` the first column of the body rows is italic (padding stays unstyled).
+/// With `first_col` set, the first column of the body rows is styled (padding stays unstyled).
 fn write_table_with(
     out: &mut dyn Write,
     rows: &[Vec<String>],
-    italic_first: bool,
+    first_col: Option<console::Style>,
 ) -> std::io::Result<()> {
     let cols = rows[0].len();
     let widths: Vec<usize> = (0..cols)
@@ -324,10 +324,9 @@ fn write_table_with(
                 } else {
                     widths[i] - cell.len()
                 };
-                let text = if italic_first && !first && i == 0 {
-                    console::Style::new().italic().apply_to(cell).to_string()
-                } else {
-                    cell.clone()
+                let text = match &first_col {
+                    Some(style) if !first && i == 0 => style.apply_to(cell).to_string(),
+                    _ => cell.clone(),
                 };
                 format!("{text}{}", " ".repeat(pad))
             })

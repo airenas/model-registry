@@ -4,7 +4,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 /// Bars are drawn on stderr and hidden automatically when it is not a terminal.
-const OVERALL_TEMPLATE: &str = "{prefix:>10.bold} [{wide_bar:.cyan/blue}] {percent:>3}% {bytes}/{total_bytes} {binary_bytes_per_sec} ETA {eta} {msg}";
+const OVERALL_TEMPLATE: &str =
+    "{prefix:>10} [{bar:40}] {bytes}/{total_bytes} {binary_bytes_per_sec} ETA {eta} ({msg})";
 const FILE_TEMPLATE: &str =
     "           {spinner:.green} {msg:<42} [{bar:20.green/white}] {bytes}/{total_bytes}";
 
@@ -33,7 +34,7 @@ impl Progress {
         overall.set_style(
             ProgressStyle::with_template(OVERALL_TEMPLATE)
                 .expect("valid template")
-                .progress_chars("█▉▊▋▌▍▎▏ "),
+                .progress_chars("=> "),
         );
         overall.set_prefix(label.to_string());
         overall.set_message(format!("0/{files} files"));
