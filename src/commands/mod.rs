@@ -1,3 +1,5 @@
+pub mod complete;
+pub mod completion;
 pub mod delete;
 pub mod fetch;
 pub mod info;
@@ -53,6 +55,7 @@ impl Registry {
     pub fn default_commands() -> Self {
         let mut r = Self::new();
         r.register(Box::new(tag::Tag::new()));
+        r.register(Box::new(complete::Complete::new()));
         r.register(Box::new(delete::Delete::new()));
         r.register(Box::new(fetch::Fetch::new()));
         r.register(Box::new(info::Info::new()));
@@ -76,7 +79,7 @@ impl Registry {
         for c in &self.commands {
             cli = cli.subcommand(c.definition());
         }
-        cli
+        cli.subcommand(completion::definition())
     }
 
     /// `args` includes the program name. Help/usage errors are returned as clap errors.
@@ -85,8 +88,12 @@ impl Registry {
         I: IntoIterator<Item = T>,
         T: Into<std::ffi::OsString> + Clone,
     {
-        let matches = self.cli().try_get_matches_from(args)?;
+        let mut cli = self.cli();
+        let matches = cli.clone().try_get_matches_from(args)?;
         let (name, sub) = matches.subcommand().ok_or("no command given")?;
+        if name == completion::NAME {
+            return completion::run(&mut cli, sub, out);
+        }
         let cmd = self
             .commands
             .iter()
