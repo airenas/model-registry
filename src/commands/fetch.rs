@@ -1,4 +1,7 @@
-use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, jobs_arg, s3_factory};
+use super::{
+    BUCKET_REQUIRED, CmdResult, Command, StorageFactory, jobs_arg, s3_factory,
+    status as status_prefix,
+};
 use crate::models::ModelRef;
 use crate::models::artifacts::{Artifact, Artifacts};
 use crate::models::consts::{ARTIFACTS_FILE, LOCAL_DIR};
@@ -202,7 +205,13 @@ fn fetch(
             if progress.visible() {
                 return Ok(());
             }
-            writeln!(out, "downloaded {} ({} bytes)", a.path, a.size)
+            writeln!(
+                out,
+                "{}{} ({} bytes)",
+                status_prefix("Downloaded"),
+                a.path,
+                a.size
+            )
         },
     )?;
     progress.finish();
@@ -218,14 +227,16 @@ fn fetch(
     if todo.is_empty() {
         writeln!(
             out,
-            "Up to date: {version}, {} files in {}",
+            "{}{version}, {} files in {}",
+            status_prefix("Up to date"),
             remote.files.len(),
             dir.display()
         )?;
     } else {
         write!(
             out,
-            "Fetched {version}: {} of {} files to {}",
+            "{}{version}: {} of {} files to {}",
+            status_prefix("Fetched"),
             todo.len(),
             remote.files.len(),
             dir.display()
@@ -492,8 +503,8 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         run(&pushed(), "v1", d.path()).unwrap();
         let out = run(&pushed(), "v1", d.path()).unwrap();
-        assert!(out.starts_with("Up to date: v1, 2 files"), "{out}");
-        assert!(!out.contains("downloaded"));
+        assert!(out.contains("Up to date v1, 2 files"), "{out}");
+        assert!(!out.contains("Downloaded"));
     }
 
     #[test]
@@ -502,7 +513,7 @@ mod tests {
         run(&pushed(), "v1", d.path()).unwrap();
         fs::remove_file(d.path().join("sub/b.txt")).unwrap();
         let out = run(&pushed(), "v1", d.path()).unwrap();
-        assert!(out.contains("downloaded sub/b.txt") && !out.contains("downloaded a.bin"));
+        assert!(out.contains("Downloaded sub/b.txt") && !out.contains("Downloaded a.bin"));
         assert!(out.contains("Fetched v1: 1 of 2 files"));
         assert_eq!(fs::read(d.path().join("sub/b.txt")).unwrap(), b"hi");
     }

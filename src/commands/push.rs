@@ -1,4 +1,4 @@
-use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, jobs_arg, s3_factory};
+use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, jobs_arg, s3_factory, status};
 use crate::models::artifacts::{Artifact, Artifacts};
 use crate::models::consts::TOOL_VERSION;
 use crate::models::consts::{ARTIFACTS_FILE, LOCAL_DIR};
@@ -295,8 +295,10 @@ fn push(
             }
             writeln!(
                 out,
-                "uploaded {prefix}/{} ({} bytes)",
-                f.artifact.path, f.artifact.size
+                "{}{prefix}/{} ({} bytes)",
+                status("Uploaded"),
+                f.artifact.path,
+                f.artifact.size
             )
         },
     )
@@ -328,7 +330,8 @@ fn push(
     progress.finish();
     write!(
         out,
-        "Pushed {version}: {count} files, {size} bytes to {prefix}/"
+        "{}{version}: {count} files, {size} bytes to {prefix}/",
+        status("Pushed")
     )?;
     if progress.visible() {
         write!(

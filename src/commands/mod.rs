@@ -103,6 +103,16 @@ impl Registry {
     }
 }
 
+/// A cargo-style status prefix: a right-aligned bold green verb, e.g. `    Fetched`.
+/// Colors are dropped automatically when stdout is not a terminal.
+pub fn status(verb: &str) -> String {
+    let styled = console::Style::new().green().bold().apply_to(verb);
+    format!(
+        "{}{styled} ",
+        " ".repeat(12usize.saturating_sub(verb.len()))
+    )
+}
+
 pub const BUCKET_REQUIRED: &str = "bucket is required (use -b/--bucket or set MR_BUCKET)";
 
 /// The bucket option shared by all commands. It is global, so it can be given before or

@@ -36,7 +36,13 @@ impl Progress {
                 .expect("valid template")
                 .progress_chars("=> "),
         );
-        overall.set_prefix(label.to_string());
+        overall.set_prefix(
+            console::Style::new()
+                .italic()
+                .for_stderr()
+                .apply_to(label)
+                .to_string(),
+        );
         overall.set_message(format!("0/{files} files"));
         Self {
             multi,
