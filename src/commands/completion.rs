@@ -60,7 +60,7 @@ function __mr_next_pos
     test (__mr_npos) -ge 1
 end
 
-complete -c mr -n '__fish_seen_subcommand_from fetch delete tag ls; and __mr_first_pos' -f -a '(__mr_complete_ref)'
+complete -c mr -n '__fish_seen_subcommand_from fetch delete tag ls unlock; and __mr_first_pos' -f -a '(__mr_complete_ref)'
 complete -c mr -n '__fish_seen_subcommand_from push; and __mr_first_pos' -f -a '(__mr_complete_ref --models)'
 # the directory after model:version
 complete -c mr -n '__fish_seen_subcommand_from push fetch; and __mr_next_pos' -F
@@ -95,7 +95,7 @@ _mr_dyn() {
     fi
     local flag=""
     case "$sub:$npos" in
-        fetch:0 | delete:0 | tag:0 | ls:0) ;;
+        fetch:0 | delete:0 | tag:0 | ls:0 | unlock:0) ;;
         push:0) flag=--models ;;
         push:1 | fetch:1)
             _filedir

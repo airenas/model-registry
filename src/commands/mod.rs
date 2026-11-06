@@ -7,6 +7,7 @@ pub mod init;
 pub mod ls;
 pub mod push;
 pub mod tag;
+pub mod unlock;
 pub mod version;
 
 use crate::storage::{Storage, StorageResult, s3::S3Storage};
@@ -57,6 +58,7 @@ impl Registry {
         r.register(Box::new(tag::Tag::new()));
         r.register(Box::new(complete::Complete::new()));
         r.register(Box::new(delete::Delete::new()));
+        r.register(Box::new(unlock::Unlock::new()));
         r.register(Box::new(fetch::Fetch::new()));
         r.register(Box::new(info::Info::new()));
         r.register(Box::new(init::Init::new()));

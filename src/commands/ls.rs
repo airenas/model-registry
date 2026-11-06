@@ -2,7 +2,7 @@ use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, s3_factory};
 use crate::models::consts::ARTIFACTS_FILE;
 use crate::models::index::{self, ModelEntry};
 use crate::models::versions::{self, LATEST_ALIAS, Versions, versions_key};
-use crate::models::{ModelRef, artifacts};
+use crate::models::{ModelRef, artifacts, lock_key};
 use crate::storage::Storage;
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
 use std::io::Write;
@@ -132,6 +132,17 @@ impl Command for List {
             lbl("Latest       :"),
             versions.latest_model_version
         )?;
+        if let Some((owner, age)) = crate::storage::lock::held(storage.as_ref(), &lock_key(model)?)
+        {
+            writeln!(
+                out,
+                "{} {}",
+                lbl("Locked by    :"),
+                console::Style::new()
+                    .yellow()
+                    .apply_to(format!("{owner}, {age}s ago"))
+            )?;
+        }
         if !versions.description.is_empty() {
             writeln!(
                 out,
@@ -416,6 +427,24 @@ mod tests {
             run_args(&mem, &["--full"]).unwrap(),
             "Model        : m1\nTool version : 0.1.0\nCreated at   : 2026-11-05T09:00:00Z\nLatest       : \n\nVERSION  CREATED               FILES  SIZE     PATH   TOOL VERSION  MESSAGE\nv1       2026-11-05T09:59:00Z  3      1.5 GiB  m1/v1  0.1.0         \n"
         );
+    }
+
+    #[test]
+    fn shows_lock() {
+        let mem = MemStorage::default();
+        let v = versions_json(
+            r#"{"version":"v1","tool_version":"0.1.0","path":"m1/v1","created_at":"2026-11-05T09:59:00Z","file_count":1,"total_size":2}"#,
+        );
+        mem.put("m1/versions.json", &v).unwrap();
+        assert!(!run(&mem).unwrap().contains("Locked by"));
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let l = format!(r#"{{"id":"x","owner":"bob@pc (pid 1)","acquired_at":{now}}}"#);
+        mem.put("m1/.lock", l.as_bytes()).unwrap();
+        let out = run(&mem).unwrap();
+        assert!(out.contains("Locked by    : bob@pc (pid 1)"), "{out}");
     }
 
     #[test]

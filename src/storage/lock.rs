@@ -74,6 +74,24 @@ fn write(storage: &dyn Storage, key: &str, lock: &LockFile) -> StorageResult<()>
     storage.put(key, &serde_json::to_vec(lock)?)
 }
 
+/// Owner and age in seconds of a live (not expired) lock on `key`.
+pub fn held(storage: &dyn Storage, key: &str) -> Option<(String, u64)> {
+    let l = read(storage, key)?;
+    let age = now_secs().saturating_sub(l.acquired_at);
+    (age < LockConfig::default().ttl.as_secs()).then_some((l.owner, age))
+}
+
+/// Owner and age in seconds of the lock on `key`, even if it already expired.
+pub fn peek(storage: &dyn Storage, key: &str) -> Option<(String, u64)> {
+    let l = read(storage, key)?;
+    Some((l.owner, now_secs().saturating_sub(l.acquired_at)))
+}
+
+/// Removes the lock object regardless of its owner.
+pub fn force_release(storage: &dyn Storage, key: &str) -> StorageResult<()> {
+    storage.delete_prefix(key).map(|_| ())
+}
+
 /// Runs `f` while holding the lock object `key`; fails at once if somebody else holds it.
 pub fn with_lock<T>(
     storage: &dyn Storage,
@@ -157,6 +175,16 @@ mod tests {
             acquired_at: now_secs() - age,
         };
         write(mem, "m/.lock", &l).unwrap();
+    }
+
+    #[test]
+    fn reports_held_lock() {
+        let mem = MemStorage::default();
+        assert!(held(&mem, "m/.lock").is_none());
+        put_lock(&mem, "x", 5);
+        assert_eq!(held(&mem, "m/.lock").unwrap().0, "bob@pc");
+        put_lock(&mem, "x", 3600);
+        assert!(held(&mem, "m/.lock").is_none());
     }
 
     #[test]
