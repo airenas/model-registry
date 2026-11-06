@@ -370,7 +370,7 @@ mod tests {
         }));
         let args = crate::commands::parse_for_test(
             cmd.definition(),
-            &[&["list", "m1", "-b", "b"][..], extra].concat(),
+            &[&["ls", "m1", "-b", "b"][..], extra].concat(),
         )
         .unwrap();
         let mut out = Vec::new();
@@ -477,8 +477,8 @@ mod tests {
             cmd.run(&m, &mut out).unwrap();
             String::from_utf8(out).unwrap()
         };
-        assert_eq!(args(&["list", "-b", "b"]), "asr\ntagger\n");
-        let full = args(&["list", "-b", "b", "--full"]);
+        assert_eq!(args(&["ls", "-b", "b"]), "asr\ntagger\n");
+        let full = args(&["ls", "-b", "b", "--full"]);
         assert!(full.starts_with("MODEL   CREATED  DESCRIPTION\n"));
         assert!(full.contains("tagger  x        pos tagger\n"));
     }
@@ -571,7 +571,7 @@ mod tests {
         });
         let args = crate::commands::parse_for_test(
             cmd.definition(),
-            &[&["list", target, "-b", "b"][..], extra].concat(),
+            &[&["ls", target, "-b", "b"][..], extra].concat(),
         )?;
         let mut out = Vec::new();
         cmd.run(&args, &mut out)?;
