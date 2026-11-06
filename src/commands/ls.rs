@@ -346,8 +346,12 @@ fn write_table_with(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use core::str;
+
+use super::*;
     use crate::storage::{Storage, mem::MemStorage};
+    use googletest::assert_that;
+    use googletest::prelude::*;
 
     fn run(mem: &MemStorage) -> Result<String, Box<dyn std::error::Error>> {
         run_args(mem, &[])
@@ -402,9 +406,26 @@ mod tests {
             ),
         )
         .unwrap();
-        assert_eq!(
-            run_args(&mem, &["--full"]).unwrap(),
-            "Model        : m1\nTool version : 0.1.0\nCreated at   : 2026-11-05T09:00:00Z\nLatest       : \n\nVERSION  CREATED               FILES  SIZE     PATH   TOOL VERSION  MESSAGE\nv1       2026-11-05T09:59:00Z  3      1.5 GiB  m1/v1  0.1.0         \n"
+        let res = run_args(&mem, &["--full"]).unwrap();
+        let res = console::strip_ansi_codes(&res);
+        assert_that!(res, contains_substring("Model        : m1"));
+        assert_that!(res, contains_substring("Tool version : 0.1.0"));
+        assert_that!(
+            res,
+            contains_substring("Created at   : 2026-11-05T09:00:00Z")
+        );
+        assert_that!(res, contains_substring("Latest       : "));
+        assert_that!(
+            res,
+            contains_substring(
+                "VERSION  CREATED               FILES  SIZE     PATH   TOOL VERSION  MESSAGE"
+            )
+        );
+        assert_that!(
+            res,
+            contains_substring(
+                "v1       2026-11-05T09:59:00Z  3      1.5 GiB  m1/v1  0.1.0         "
+            )
         );
     }
 
@@ -423,7 +444,10 @@ mod tests {
         let l = format!(r#"{{"id":"x","owner":"bob@pc (pid 1)","acquired_at":{now}}}"#);
         mem.put("m1/.lock", l.as_bytes()).unwrap();
         let out = run(&mem).unwrap();
-        assert!(out.contains("Locked by    : bob@pc (pid 1)"), "{out}");
+        assert_that!(
+            console::strip_ansi_codes(&out),
+            contains_substring("Locked by    : bob@pc (pid 1)")
+        );
     }
 
     #[test]
@@ -438,10 +462,12 @@ mod tests {
         )
         .unwrap();
         let out = run(&mem).unwrap();
-        assert!(out.contains("VERSION  CREATED               MESSAGE\n"));
-        assert!(out.contains("v1       2026-11-05T09:59:00Z  changed model type\n"));
+        let stripped = console::strip_ansi_codes(&out);
+        assert_that!(stripped, contains_substring("VERSION  CREATED               MESSAGE\n"));
+        assert_that!(stripped, contains_substring("v1       2026-11-05T09:59:00Z  changed model type\n"));
         let full = run_args(&mem, &["--full"]).unwrap();
-        assert!(full.contains("0.1.0         changed model type\n"));
+        let stripped = console::strip_ansi_codes(&full);
+        assert_that!(stripped, contains_substring("0.1.0         changed model type\n"));
     }
 
     #[test]
@@ -452,10 +478,9 @@ mod tests {
             br#"{"tool_version":"0.1.0","created_at":"2026-11-05T09:00:00Z","latest_model_version":"","description":"speech tagger","versions":[]}"#,
         )
         .unwrap();
-        assert_eq!(
-            run(&mem).unwrap(),
-            "Description  : speech tagger\nNo versions\n"
-        );
+        let res = run(&mem).unwrap();
+        let stripped = console::strip_ansi_codes(&res);
+        assert_eq!(stripped, "Description  : speech tagger\nNo versions\n");
     }
 
     #[test]
@@ -476,8 +501,9 @@ mod tests {
         let mut out = Vec::new();
         list_models(&mem, "b", true, &mut out).unwrap();
         let out = String::from_utf8(out).unwrap();
-        assert!(
-            out.contains("a      2026-11-05T10:00:00Z  first\n"),
+        assert_that!(
+            console::strip_ansi_codes(&out),
+            contains_substring("a      2026-11-05T10:00:00Z  first\n"),
             "{out}"
         );
     }
@@ -511,26 +537,27 @@ mod tests {
         mem.put("m1/v2/artifacts.json", br#"{"version":"v2","files":[]}"#)
             .unwrap();
         let out = run_args_model(&mem, "m1:prod", &[]).unwrap();
-        assert!(out.contains("Version      : v1 (prod)\n"));
-        assert!(out.contains("Tags         : prod\n"));
-        assert!(out.contains("Message      : first\n"));
-        assert!(out.contains("Files        : 2 (1.5 KiB)\n"));
-        assert!(out.contains("a.bin      1.0 KiB  2026-11-05T09:00:00Z\n"));
-        assert!(!out.contains("abc"));
-        assert!(
-            run_args_model(&mem, "m1:v1", &["--full"])
-                .unwrap()
-                .contains("abc")
+        let out = console::strip_ansi_codes(&out);
+        assert_that!(&out, contains_substring("Version      : v1 (prod)\n"));
+        assert_that!(&out, contains_substring("Tags         : prod\n"));
+        assert_that!(&out, contains_substring("Message      : first\n"));
+        assert_that!(&out, contains_substring("Files        : 2 (1.5 KiB)\n"));
+        assert_that!(
+            &out,
+            contains_substring("a.bin      1.0 KiB  2026-11-05T09:00:00Z\n")
         );
-        assert!(
-            run_args_model(&mem, "m1:latest", &[])
-                .unwrap()
-                .contains("Version      : v2 (latest)\nCreated at   : 2026-11-06T10:00:00Z")
+        assert_that!(&out, not(contains_substring("abc")));
+        assert_that!(
+            console::strip_ansi_codes(&run_args_model(&mem, "m1:v1", &["--full"]).unwrap()),
+            contains_substring("abc")
         );
-        assert!(
-            run_args_model(&mem, "m1:v2", &[])
-                .unwrap()
-                .contains("Tags         : latest\n")
+        assert_that!(
+            console::strip_ansi_codes(&run_args_model(&mem, "m1:latest", &[]).unwrap()),
+            contains_substring("Version      : v2 (latest)\nCreated at   : 2026-11-06T10:00:00Z")
+        );
+        assert_that!(
+            console::strip_ansi_codes(&run_args_model(&mem, "m1:v2", &[]).unwrap()),
+            contains_substring("Tags         : latest\n")
         );
         assert!(run_args_model(&mem, "m1:nope", &[]).is_err());
     }

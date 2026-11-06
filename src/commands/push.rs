@@ -513,7 +513,7 @@ mod tests {
         };
         let mut out = Vec::new();
         push(mem, "m", "auto", scan(dir).unwrap(), opts, now(), &mut out).unwrap();
-        String::from_utf8(out).unwrap()
+        console::strip_ansi_codes(&String::from_utf8(out).unwrap()).into_owned()
     }
 
     #[test]

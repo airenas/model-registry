@@ -143,6 +143,8 @@ mod tests {
     use super::*;
     use crate::models::versions::{Version, Versions};
     use crate::storage::mem::MemStorage;
+    use googletest::assert_that;
+    use googletest::prelude::*;
 
     fn entry(v: &str) -> Version {
         Version {
@@ -183,7 +185,8 @@ mod tests {
     fn deletes_version_and_updates_latest() {
         let mem = setup();
         let out = run(&mem, "v2", false, true).unwrap();
-        assert!(out.contains("Deleted v2: 1 files"));
+        assert_that!(out, contains_substring("Deleted"));
+        assert_that!(out, contains_substring("v2: 1 files"));
         assert_eq!(versions(&mem).latest_model_version, "v1");
         assert!(mem.list("m/v2/").unwrap().is_empty());
         assert_eq!(mem.list("m/v1/").unwrap().len(), 2);

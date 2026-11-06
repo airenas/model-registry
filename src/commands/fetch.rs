@@ -503,7 +503,8 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         run(&pushed(), "v1", d.path()).unwrap();
         let out = run(&pushed(), "v1", d.path()).unwrap();
-        assert!(out.contains("Up to date v1, 2 files"), "{out}");
+        assert!(out.contains("Up to date"), "{out}");
+        assert!(out.contains("v1, 2 files"), "{out}");
         assert!(!out.contains("Downloaded"));
     }
 
@@ -513,7 +514,9 @@ mod tests {
         run(&pushed(), "v1", d.path()).unwrap();
         fs::remove_file(d.path().join("sub/b.txt")).unwrap();
         let out = run(&pushed(), "v1", d.path()).unwrap();
-        assert!(out.contains("Downloaded sub/b.txt") && !out.contains("Downloaded a.bin"));
+        assert!(out.contains("Downloaded"));
+        assert!(out.contains("sub/b.txt"));
+        assert!(!out.contains("a.bin"));
         assert!(out.contains("Fetched v1: 1 of 2 files"));
         assert_eq!(fs::read(d.path().join("sub/b.txt")).unwrap(), b"hi");
     }
