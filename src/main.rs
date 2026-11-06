@@ -12,7 +12,7 @@ fn main() -> ExitCode {
                 ExitCode::from(ce.exit_code() as u8)
             }
             None => {
-                eprintln!("error: {e}");
+                eprintln!("{} {e}", model_registry::commands::error_prefix());
                 ExitCode::FAILURE
             }
         },

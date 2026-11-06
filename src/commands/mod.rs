@@ -113,6 +113,18 @@ pub fn status(verb: &str) -> String {
     )
 }
 
+/// Bold red `error:` for stderr; plain when stderr is not a terminal.
+pub fn error_prefix() -> String {
+    format!(
+        "{}",
+        console::Style::new()
+            .red()
+            .bold()
+            .for_stderr()
+            .apply_to("ERROR:")
+    )
+}
+
 pub fn warning_prefix() -> String {
     format!(
         "{} ",

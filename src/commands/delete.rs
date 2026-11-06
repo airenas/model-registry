@@ -1,4 +1,5 @@
 use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, s3_factory};
+use crate::commands::status;
 use crate::models::versions::{self, validate_version, versions_key};
 use crate::models::{ModelRef, model_prefix};
 use crate::storage::Storage;
@@ -129,7 +130,8 @@ fn delete(
     })?;
     writeln!(
         out,
-        "Deleted {version}: {n} files ({} bytes) from {prefix}",
+        "{}{version}: {n} files ({} bytes) from {prefix}",
+        status("Deleted"),
         entry.total_size
     )?;
     Ok(())
@@ -180,7 +182,7 @@ mod tests {
     fn deletes_version_and_updates_latest() {
         let mem = setup();
         let out = run(&mem, "v2", false, true).unwrap();
-        assert!(out.starts_with("Deleted v2: 1 files"));
+        assert!(out.contains("Deleted v2: 1 files"));
         assert_eq!(versions(&mem).latest_model_version, "v1");
         assert!(mem.list("m/v2/").unwrap().is_empty());
         assert_eq!(mem.list("m/v1/").unwrap().len(), 2);
