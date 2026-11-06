@@ -1,5 +1,6 @@
 pub mod artifacts;
 pub mod consts;
+pub mod index;
 pub mod versions;
 
 pub fn model_prefix(model: &str) -> Result<String, String> {

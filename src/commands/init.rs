@@ -1,4 +1,7 @@
 use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, s3_factory};
+use crate::commands::status;
+use crate::models::index::{self, ModelEntry, ModelsIndex};
+use crate::models::model_prefix;
 use crate::models::versions::{Versions, versions_key};
 use crate::storage::Storage;
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -53,19 +56,39 @@ impl Command for Init {
             .get_one::<String>("description")
             .map(|m| m.trim())
             .unwrap_or_default();
-        init(storage.as_ref(), &key, description, Utc::now())?;
-        writeln!(out, "Initialized model in s3://{bucket}/{key}")?;
+        init(storage.as_ref(), model, &key, description, Utc::now())?;
+        writeln!(out, "{}: s3://{bucket}/{key}", status("Initialized model"))?;
         Ok(())
     }
 }
 
-fn init(storage: &dyn Storage, key: &str, description: &str, now: DateTime<Utc>) -> CmdResult {
+fn init(
+    storage: &dyn Storage,
+    model: &str,
+    key: &str,
+    description: &str,
+    now: DateTime<Utc>,
+) -> CmdResult {
     if storage.exists(key)? {
         return Err("already initialized".into());
     }
-    let mut versions = Versions::new(now.to_rfc3339_opts(SecondsFormat::Secs, true));
+    let created_at = now.to_rfc3339_opts(SecondsFormat::Secs, true);
+    let mut versions = Versions::new(created_at.clone());
     versions.description = description.to_string();
     storage.put(key, &serde_json::to_vec_pretty(&versions)?)?;
+
+    let index_key = index::models_key();
+    let mut models = if storage.exists(index_key)? {
+        index::parse(&storage.get(index_key)?).map_err(|e| format!("invalid {index_key}: {e}"))?
+    } else {
+        ModelsIndex::new(created_at.clone())
+    };
+    models.upsert(ModelEntry {
+        name: model_prefix(model)?,
+        created_at,
+        description: description.to_string(),
+    });
+    storage.put(index_key, &serde_json::to_vec_pretty(&models)?)?;
     Ok(())
 }
 
@@ -118,6 +141,18 @@ mod tests {
         cmd(&mem).run(&args, &mut Vec::new()).unwrap();
         let v = versions::parse(&mem.get("m1/versions.json").unwrap()).unwrap();
         assert_eq!(v.description, "speech tagger");
+    }
+
+    #[test]
+    fn registers_in_models_json() {
+        let mem = MemStorage::default();
+        let c = cmd(&mem);
+        c.run(&matches("b"), &mut Vec::new()).unwrap();
+        c.run(&matches("a"), &mut Vec::new()).unwrap();
+        let idx = index::parse(&mem.get("models.json").unwrap()).unwrap();
+        let names: Vec<_> = idx.models.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, ["a", "b"]);
+        assert_eq!(idx.models[0].description, "desc");
     }
 
     #[test]
