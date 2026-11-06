@@ -36,7 +36,7 @@ pub fn open_storage(
     args: &ArgMatches,
 ) -> Result<Box<dyn Storage>, Box<dyn Error>> {
     let bucket = args.get_one::<String>("bucket").ok_or(BUCKET_REQUIRED)?;
-    Ok(factory(bucket)?)
+    factory(bucket)
 }
 
 /// The `-g/--group` value without surrounding slashes; empty when not given.
