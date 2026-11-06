@@ -420,8 +420,10 @@ mod tests {
             ),
         )
         .unwrap();
+        let res = run(&mem).unwrap();
+        let res = console::strip_ansi_codes(&res);
         assert_eq!(
-            run(&mem).unwrap(),
+            res,
             "Model        : m1\nTool version : 0.1.0\nCreated at   : 2026-11-05T09:00:00Z\nLatest       : \n\nVERSION  CREATED\nv1       2026-11-05T09:59:00Z\nv10      2026-11-06T10:00:00Z\n"
         );
     }

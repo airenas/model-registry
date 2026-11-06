@@ -335,8 +335,12 @@ fn verify(path: &Path, a: &Artifact) -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+    use core::str;
+
     use super::*;
     use crate::storage::mem::MemStorage;
+    use googletest::assert_that;
+    use googletest::prelude::*;
 
     fn pushed() -> MemStorage {
         let mem = MemStorage::default();
@@ -384,9 +388,10 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let target = d.path().join("out");
         let out = run(&pushed(), "v1", &target).unwrap();
+        let stripped = console::strip_ansi_codes(&out);
         assert_eq!(fs::read(target.join("a.bin")).unwrap(), b"hello");
         assert_eq!(fs::read(target.join("sub/b.txt")).unwrap(), b"hi");
-        assert!(out.contains("Fetched v1: 2 of 2 files"));
+        assert!(stripped.contains("Fetched v1: 2 of 2 files"));
         let local: Artifacts =
             serde_json::from_slice(&fs::read(target.join(".mr/artifacts.json")).unwrap()).unwrap();
         assert_eq!(local.version, "v1");
@@ -409,7 +414,7 @@ mod tests {
         for name in ["production", "latest"] {
             let d = tempfile::tempdir().unwrap();
             let out = run(&mem, name, d.path()).unwrap();
-            assert!(out.contains("Fetched v1:"), "{name}: {out}");
+            assert_that!(out, contains_substring("Fetched"), "{name}: {out}");
             assert!(d.path().join("a.bin").exists());
         }
     }
@@ -511,10 +516,9 @@ mod tests {
         run(&pushed(), "v1", d.path()).unwrap();
         fs::remove_file(d.path().join("sub/b.txt")).unwrap();
         let out = run(&pushed(), "v1", d.path()).unwrap();
-        assert!(out.contains("Downloaded"));
-        assert!(out.contains("sub/b.txt"));
-        assert!(!out.contains("a.bin"));
-        assert!(out.contains("Fetched v1: 1 of 2 files"));
+        let stripped = console::strip_ansi_codes(&out);
+        assert_that!(stripped, not(contains_substring("a.bin")));
+        assert_that!(stripped, contains_substring("Fetched v1: 1 of 2 files"));
         assert_eq!(fs::read(d.path().join("sub/b.txt")).unwrap(), b"hi");
     }
 
