@@ -21,9 +21,6 @@ pub trait Storage: Send + Sync {
     fn get_file(&self, key: &str, path: &Path, on_bytes: OnBytes) -> StorageResult<()>;
     fn exists(&self, key: &str) -> StorageResult<bool>;
     fn list(&self, prefix: &str) -> StorageResult<Vec<String>>;
-    /// Names of the direct "sub folders" under the prefix (`""` for the top level), sorted,
-    /// without the prefix and the trailing slash.
-    fn list_dirs(&self, prefix: &str) -> StorageResult<Vec<String>>;
     /// Deletes all objects with the key prefix and returns how many were deleted.
     fn delete_prefix(&self, prefix: &str) -> StorageResult<usize>;
 }
@@ -83,17 +80,17 @@ pub(crate) mod mem {
             keys.sort();
             Ok(keys)
         }
-        fn list_dirs(&self, prefix: &str) -> StorageResult<Vec<String>> {
-            let dirs: std::collections::BTreeSet<String> = self
-                .0
-                .lock()
-                .unwrap()
-                .keys()
-                .filter_map(|k| k.strip_prefix(prefix))
-                .filter_map(|rest| rest.split_once('/').map(|(dir, _)| dir.to_string()))
-                .collect();
-            Ok(dirs.into_iter().collect())
-        }
+        // fn list_dirs(&self, prefix: &str) -> StorageResult<Vec<String>> {
+        //     let dirs: std::collections::BTreeSet<String> = self
+        //         .0
+        //         .lock()
+        //         .unwrap()
+        //         .keys()
+        //         .filter_map(|k| k.strip_prefix(prefix))
+        //         .filter_map(|rest| rest.split_once('/').map(|(dir, _)| dir.to_string()))
+        //         .collect();
+        //     Ok(dirs.into_iter().collect())
+        // }
         fn delete_prefix(&self, prefix: &str) -> StorageResult<usize> {
             let mut m = self.0.lock().unwrap();
             let before = m.len();

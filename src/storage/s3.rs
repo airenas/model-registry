@@ -514,31 +514,4 @@ impl Storage for S3Storage {
             Ok(keys)
         })
     }
-
-    fn list_dirs(&self, prefix: &str) -> StorageResult<Vec<String>> {
-        self.rt.block_on(async {
-            let mut dirs = Vec::new();
-            let mut pages = self
-                .client
-                .list_objects_v2()
-                .bucket(&self.bucket)
-                .prefix(prefix)
-                .delimiter("/")
-                .into_paginator()
-                .send();
-            while let Some(page) = pages.next().await {
-                for p in page?.common_prefixes() {
-                    if let Some(name) = p
-                        .prefix()
-                        .and_then(|p| p.strip_prefix(prefix))
-                        .map(|p| p.trim_end_matches('/'))
-                    {
-                        dirs.push(name.to_string());
-                    }
-                }
-            }
-            dirs.sort();
-            Ok(dirs)
-        })
-    }
 }

@@ -460,9 +460,6 @@ mod tests {
         fn list(&self, p: &str) -> storage::StorageResult<Vec<String>> {
             self.inner.list(p)
         }
-        fn list_dirs(&self, p: &str) -> storage::StorageResult<Vec<String>> {
-            self.inner.list_dirs(p)
-        }
         fn delete_prefix(&self, p: &str) -> storage::StorageResult<usize> {
             self.inner.delete_prefix(p)
         }
@@ -606,7 +603,7 @@ mod tests {
                 &mut out,
             )
             .unwrap();
-            String::from_utf8(out).unwrap()
+            console::strip_ansi_codes(&String::from_utf8(out).unwrap()).into_owned()
         };
         assert!(!go("v1.0.0").contains("warning"));
         let out = go("v1.0.5");

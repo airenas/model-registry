@@ -1,6 +1,6 @@
 use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, s3_factory};
 use crate::models::consts::ARTIFACTS_FILE;
-use crate::models::index::{self, ModelEntry};
+use crate::models::index;
 use crate::models::versions::{self, LATEST_ALIAS, Versions, versions_key};
 use crate::models::{ModelRef, artifacts, lock_key};
 use crate::storage::Storage;
@@ -236,8 +236,7 @@ fn show_version(
     Ok(())
 }
 
-/// Models from the bucket's models.json. Buckets without one (initialized by older
-/// versions) fall back to scanning for top-level folders that contain a versions.json.
+/// Models from the bucket's models.json; a bucket without one has no models.
 fn list_models(storage: &dyn Storage, bucket: &str, full: bool, out: &mut dyn Write) -> CmdResult {
     let key = index::models_key();
     let entries = if storage.exists(key)? {
@@ -245,7 +244,7 @@ fn list_models(storage: &dyn Storage, bucket: &str, full: bool, out: &mut dyn Wr
             .map_err(|e| format!("invalid {key}: {e}"))?
             .models
     } else {
-        scan_models(storage)?
+        Vec::new()
     };
     if entries.is_empty() {
         writeln!(out, "No models in {bucket}")?;
@@ -271,26 +270,6 @@ fn list_models(storage: &dyn Storage, bucket: &str, full: bool, out: &mut dyn Wr
     }
     write_table_with(out, &rows, Some(console::Style::new().bold()))?;
     Ok(())
-}
-
-fn scan_models(storage: &dyn Storage) -> Result<Vec<ModelEntry>, Box<dyn std::error::Error>> {
-    let mut entries = Vec::new();
-    for name in storage.list_dirs("")? {
-        let key = versions_key(&name)?;
-        if !storage.exists(&key)? {
-            continue;
-        }
-        let (created_at, description) = match versions::parse(&storage.get(&key)?) {
-            Ok(v) => (v.created_at, v.description),
-            Err(_) => (String::new(), "(invalid versions.json)".into()),
-        };
-        entries.push(ModelEntry {
-            name,
-            created_at,
-            description,
-        });
-    }
-    Ok(entries)
 }
 
 fn one_line(s: &str) -> String {
@@ -477,39 +456,6 @@ mod tests {
             run(&mem).unwrap(),
             "Description  : speech tagger\nNo versions\n"
         );
-    }
-
-    #[test]
-    fn lists_models() {
-        let mem = MemStorage::default();
-        let init = |name: &str, desc: &str| {
-            mem.put(
-                &format!("{name}/versions.json"),
-                format!(
-                    r#"{{"tool_version":"0.1.0","created_at":"x","latest_model_version":"v2","description":"{desc}","versions":[{{"version":"v1","tool_version":"0","path":"{name}/v1","created_at":"x","file_count":1,"total_size":1}}]}}"#
-                )
-                .as_bytes(),
-            )
-            .unwrap();
-        };
-        init("tagger", "pos tagger");
-        init("asr", "");
-        mem.put("junk/file.bin", b"x").unwrap();
-        mem.put("tagger/v1/a", b"x").unwrap();
-        let args = |a: &[&str]| {
-            let cmd = List::with_factory({
-                let m = mem.clone();
-                Box::new(move |_| Ok(Box::new(m.clone()) as Box<dyn Storage>))
-            });
-            let m = crate::commands::parse_for_test(cmd.definition(), a).unwrap();
-            let mut out = Vec::new();
-            cmd.run(&m, &mut out).unwrap();
-            String::from_utf8(out).unwrap()
-        };
-        assert_eq!(args(&["ls", "-b", "b"]), "asr\ntagger\n");
-        let full = args(&["ls", "-b", "b", "--full"]);
-        assert!(full.starts_with("MODEL   CREATED  DESCRIPTION\n"));
-        assert!(full.contains("tagger  x        pos tagger\n"));
     }
 
     #[test]

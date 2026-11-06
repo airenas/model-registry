@@ -1,4 +1,5 @@
 use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, s3_factory};
+use crate::models::index;
 use crate::models::versions::{self, LATEST_ALIAS, versions_key};
 use crate::storage::Storage;
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
@@ -85,9 +86,12 @@ fn candidates(
             }
         }
         _ => {
-            for name in storage.list_dirs("")? {
-                if name.starts_with(word) && storage.exists(&versions_key(&name)?)? {
-                    writeln!(out, "{name}:")?;
+            let key = index::models_key();
+            if storage.exists(key)? {
+                for m in index::parse(&storage.get(key)?)?.models {
+                    if m.name.starts_with(word) {
+                        writeln!(out, "{}:", m.name)?;
+                    }
                 }
             }
         }
@@ -109,8 +113,12 @@ mod tests {
               {"version":"v2","tool_version":"0.1.0","path":"m1/v2","created_at":"x","file_count":0,"total_size":0}]}"#,
         )
         .unwrap();
-        mem.put("m2/versions.json", b"{}").unwrap();
-        mem.put("junk/file", b"x").unwrap();
+        mem.put(
+            "models.json",
+            br#"{"tool_version":"0.1.0","created_at":"x","models":[
+              {"name":"m1","created_at":"x"},{"name":"m2","created_at":"x"},{"name":"tts/me/m1","created_at":"x"}]}"#,
+        )
+        .unwrap();
         mem
     }
 
@@ -122,9 +130,11 @@ mod tests {
 
     #[test]
     fn completes_models() {
-        assert_eq!(run("", false), "m1:\nm2:\n");
+        assert_eq!(run("", false), "m1:\nm2:\ntts/me/m1:\n");
         assert_eq!(run("m1", false), "m1:\n");
         assert_eq!(run("x", false), "");
+        assert_eq!(run("t", false), "tts/me/m1:\n");
+        assert_eq!(run("tts/me/", false), "tts/me/m1:\n");
     }
 
     #[test]

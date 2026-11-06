@@ -397,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn fetches_by_alias_and_latest() {
+    fn fetches_by_tag_and_latest() {
         let mem = pushed();
         let mut v = versions::parse(&mem.get("m/versions.json").unwrap()).unwrap();
         v.tags.insert(
