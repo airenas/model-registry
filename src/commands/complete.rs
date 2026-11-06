@@ -1,4 +1,4 @@
-use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, s3_factory};
+use super::{CmdResult, Command, StorageFactory, open_storage, s3_factory};
 use crate::models::index;
 use crate::models::versions::{self, LATEST_ALIAS, versions_key};
 use crate::storage::Storage;
@@ -42,25 +42,40 @@ impl Command for Complete {
     }
 
     fn run(&self, args: &ArgMatches, out: &mut dyn Write) -> CmdResult {
-        let bucket = args.get_one::<String>("bucket").ok_or(BUCKET_REQUIRED)?;
-        let storage = (self.factory)(bucket)?;
+        let storage = open_storage(&self.factory, args)?;
         let word = args
             .get_one::<String>("word")
             .map(String::as_str)
             .unwrap_or("");
-        candidates(storage.as_ref(), word, args.get_flag("models"), out)
+        candidates(
+            storage.as_ref(),
+            super::group(args),
+            word,
+            args.get_flag("models"),
+            out,
+        )
+    }
+}
+
+/// `group/model`, or just `group/` for an empty model; the model itself without a group.
+fn with_group(group: &str, model: &str) -> String {
+    if group.is_empty() {
+        model.to_string()
+    } else {
+        format!("{group}/{model}")
     }
 }
 
 fn candidates(
     storage: &dyn Storage,
+    group: &str,
     word: &str,
     models_only: bool,
     out: &mut dyn Write,
 ) -> CmdResult {
     match word.split_once(':') {
         Some((model, part)) if !models_only => {
-            let key = versions_key(model)?;
+            let key = versions_key(&with_group(group, model))?;
             if !storage.exists(&key)? {
                 return Ok(());
             }
@@ -89,8 +104,9 @@ fn candidates(
             let key = index::models_key();
             if storage.exists(key)? {
                 for m in index::parse(&storage.get(key)?)?.models {
-                    if m.name.starts_with(word) {
-                        writeln!(out, "{}:", m.name)?;
+                    let name = m.name.strip_prefix(&with_group(group, "")).unwrap_or("");
+                    if !name.is_empty() && name.starts_with(word) {
+                        writeln!(out, "{name}:")?;
                     }
                 }
             }
@@ -124,7 +140,7 @@ mod tests {
 
     fn run(word: &str, models_only: bool) -> String {
         let mut out = Vec::new();
-        candidates(&mem(), word, models_only, &mut out).unwrap();
+        candidates(&mem(), "", word, models_only, &mut out).unwrap();
         String::from_utf8(out).unwrap()
     }
 
@@ -145,5 +161,25 @@ mod tests {
         );
         assert_eq!(run("m1:v", false), "m1:v1\tfirst\nm1:v2\t\n");
         assert_eq!(run("nope:", false), "");
+    }
+
+    #[test]
+    fn completes_within_group() {
+        let mut out = Vec::new();
+        candidates(&mem(), "tts/me", "", false, &mut out).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), "m1:\n");
+        let mem = mem();
+        mem.put(
+            "tts/me/m1/versions.json",
+            br#"{"tool_version":"0.1.0","created_at":"x","latest_model_version":"v1","versions":[
+              {"version":"v1","tool_version":"0.1.0","path":"p","created_at":"x","file_count":0,"total_size":0}]}"#,
+        )
+        .unwrap();
+        let mut out = Vec::new();
+        candidates(&mem, "tts/me", "m1:", false, &mut out).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "m1:v1\t\nm1:latest\ttag -> v1\n"
+        );
     }
 }

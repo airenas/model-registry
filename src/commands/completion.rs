@@ -13,10 +13,10 @@ function __mr_bucket_args
     set -l toks (commandline -opc)
     for i in (seq (count $toks))
         switch $toks[$i]
-            case -b --bucket
+            case -b --bucket -g --group
                 set -l n (math $i + 1)
-                test $n -le (count $toks); and printf '%s\n' -b $toks[$n]
-            case '--bucket=*'
+                test $n -le (count $toks); and printf '%s\n' $toks[$i] $toks[$n]
+            case '--bucket=*' '--group=*'
                 printf '%s\n' $toks[$i]
         end
     end
@@ -26,7 +26,7 @@ function __mr_complete_ref
     mr complete (__mr_bucket_args) $argv[1] -- (commandline -ct) 2>/dev/null
 end
 
-# number of positional words already typed after the subcommand (skips -b VALUE)
+# number of positional words already typed after the subcommand (skips -b/-g VALUE)
 function __mr_npos
     set -l toks (commandline -opc)
     set -l n 0
@@ -38,7 +38,7 @@ function __mr_npos
             continue
         end
         switch $t
-            case -b --bucket
+            case -b --bucket -g --group
                 set skip 1
             case '-*'
             case '*'
@@ -73,18 +73,18 @@ _mr_dyn() {
     declare -F _get_comp_words_by_ref >/dev/null || { _mr "$@"; return; }
     local cur words cword
     _get_comp_words_by_ref -n : cur words cword
-    local sub="" npos=0 skip=0 i w
+    local sub="" npos=0 skip=0 i w prev
     local -a bucket=()
     for ((i = 1; i < cword; i++)); do
         w=${words[i]}
         if ((skip)); then
             skip=0
-            bucket=(-b "$w")
+            bucket+=("$prev" "$w")
             continue
         fi
         case $w in
-            -b | --bucket) skip=1 ;;
-            --bucket=*) bucket=("$w") ;;
+            -b | --bucket | -g | --group) skip=1 prev=$w ;;
+            --bucket=* | --group=*) bucket+=("$w") ;;
             -*) ;;
             *) if [[ -z $sub ]]; then sub=$w; else ((npos++)); fi ;;
         esac

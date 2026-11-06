@@ -1,4 +1,6 @@
-use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, jobs_arg, s3_factory, status};
+use super::{
+    CmdResult, Command, StorageFactory, jobs_arg, model_arg, open_storage, s3_factory, status,
+};
 use crate::models::artifacts::{Artifact, Artifacts};
 use crate::models::consts::TOOL_VERSION;
 use crate::models::consts::{ARTIFACTS_FILE, LOCAL_DIR};
@@ -83,13 +85,10 @@ impl Command for Push {
     }
 
     fn run(&self, args: &ArgMatches, out: &mut dyn Write) -> CmdResult {
-        let (model, version) = ModelRef::parse_with_version(
-            args.get_one::<String>("model").ok_or("model is required")?,
-        )
-        .map_err(|e| format!("{e}; use model:auto for the next version"))?;
+        let (model, version) = ModelRef::parse_with_version(&model_arg(args)?)
+            .map_err(|e| format!("{e}; use model:auto for the next version"))?;
         let version = version.as_str();
         let dir = args.get_one::<PathBuf>("dir").ok_or("dir is required")?;
-        let bucket = args.get_one::<String>("bucket").ok_or(BUCKET_REQUIRED)?;
         let opts = Options {
             message: args
                 .get_one::<String>("message")
@@ -107,7 +106,7 @@ impl Command for Push {
             validate_version(version)?;
         }
         let files = scan(dir)?;
-        let storage = (self.factory)(bucket)?;
+        let storage = open_storage(&self.factory, args)?;
         let storage = storage.as_ref();
         let dry = opts.dry;
         let run = || push(storage, &model, version, files, opts, Utc::now(), out);

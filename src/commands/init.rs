@@ -1,4 +1,4 @@
-use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, s3_factory};
+use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, open_storage, s3_factory};
 use crate::commands::status;
 use crate::models::consts::MODELS_LOCK;
 use crate::models::index::{self, ModelEntry, ModelsIndex};
@@ -50,10 +50,10 @@ impl Command for Init {
     }
 
     fn run(&self, args: &ArgMatches, out: &mut dyn Write) -> CmdResult {
-        let model = args.get_one::<String>("model").ok_or("model is required")?;
+        let model = &super::model_arg(args)?;
         let bucket = args.get_one::<String>("bucket").ok_or(BUCKET_REQUIRED)?;
         let key = versions_key(model)?;
-        let storage = (self.factory)(bucket)?;
+        let storage = open_storage(&self.factory, args)?;
         let description = args
             .get_one::<String>("description")
             .map(|m| m.trim())
@@ -169,5 +169,25 @@ mod tests {
         let c = cmd(&mem);
         c.run(&matches("b"), &mut Vec::new()).unwrap();
         assert!(c.run(&matches("b"), &mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn group_is_a_key_prefix() {
+        let mem = MemStorage::default();
+        let args = crate::commands::parse_for_test(
+            cmd(&mem).definition(),
+            &["init", "m1", "-b", "bucket", "-g", "tts/sab", "-d", "d"],
+        )
+        .unwrap();
+        let mut out = Vec::new();
+        cmd(&mem).run(&args, &mut out).unwrap();
+        assert!(mem.exists("tts/sab/m1/versions.json").unwrap());
+        let idx = index::parse(&mem.get("models.json").unwrap()).unwrap();
+        assert_eq!(idx.models[0].name, "tts/sab/m1");
+        assert!(
+            String::from_utf8(out)
+                .unwrap()
+                .contains("s3://bucket/tts/sab/m1/versions.json")
+        );
     }
 }

@@ -1,4 +1,4 @@
-use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, s3_factory};
+use super::{CmdResult, Command, StorageFactory, open_storage, s3_factory};
 use crate::commands::status;
 use crate::models::consts::MODELS_LOCK;
 use crate::models::lock_key;
@@ -46,10 +46,13 @@ impl Command for Unlock {
     }
 
     fn run(&self, args: &ArgMatches, out: &mut dyn Write) -> CmdResult {
-        let bucket = args.get_one::<String>("bucket").ok_or(BUCKET_REQUIRED)?;
-        let storage = (self.factory)(bucket)?;
+        let storage = open_storage(&self.factory, args)?;
         let (name, key) = match args.get_one::<String>("model") {
-            Some(m) => (m.clone(), lock_key(m)?),
+            Some(m) => {
+                let m = super::grouped(args, m);
+                let key = lock_key(&m)?;
+                (m, key)
+            }
             None => ("models.json".to_string(), MODELS_LOCK.to_string()),
         };
         let ask: &dyn Fn(&str) -> bool = if args.get_flag("yes") {

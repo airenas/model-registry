@@ -80,17 +80,7 @@ pub(crate) mod mem {
             keys.sort();
             Ok(keys)
         }
-        // fn list_dirs(&self, prefix: &str) -> StorageResult<Vec<String>> {
-        //     let dirs: std::collections::BTreeSet<String> = self
-        //         .0
-        //         .lock()
-        //         .unwrap()
-        //         .keys()
-        //         .filter_map(|k| k.strip_prefix(prefix))
-        //         .filter_map(|rest| rest.split_once('/').map(|(dir, _)| dir.to_string()))
-        //         .collect();
-        //     Ok(dirs.into_iter().collect())
-        // }
+
         fn delete_prefix(&self, prefix: &str) -> StorageResult<usize> {
             let mut m = self.0.lock().unwrap();
             let before = m.len();

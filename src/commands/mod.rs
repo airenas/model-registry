@@ -30,6 +30,38 @@ pub fn jobs_arg() -> clap::Arg {
         .default_value("4")
 }
 
+/// Opens the bucket given by `-b/--bucket`.
+pub fn open_storage(
+    factory: &StorageFactory,
+    args: &ArgMatches,
+) -> Result<Box<dyn Storage>, Box<dyn Error>> {
+    let bucket = args.get_one::<String>("bucket").ok_or(BUCKET_REQUIRED)?;
+    Ok(factory(bucket)?)
+}
+
+/// The `-g/--group` value without surrounding slashes; empty when not given.
+pub fn group(args: &ArgMatches) -> &str {
+    args.get_one::<String>("group")
+        .map_or("", |g| g.trim_matches('/'))
+}
+
+/// Puts the group in front of a `model` or `model:version` argument; empty input stays empty
+/// so the usual validation reports it.
+pub fn grouped(args: &ArgMatches, model: &str) -> String {
+    let g = group(args);
+    if g.is_empty() || model.is_empty() {
+        model.to_string()
+    } else {
+        format!("{g}/{}", model.trim_start_matches('/'))
+    }
+}
+
+/// The required `model` argument (`model` or `model:version`) with the group applied.
+pub fn model_arg(args: &ArgMatches) -> Result<String, Box<dyn Error>> {
+    let m = args.get_one::<String>("model").ok_or("model is required")?;
+    Ok(grouped(args, m))
+}
+
 pub fn s3_factory() -> StorageFactory {
     Box::new(|bucket| Ok(Box::new(S3Storage::new(bucket)?) as Box<dyn Storage>))
 }
@@ -76,6 +108,7 @@ impl Registry {
         let mut cli = ClapCommand::new("mr")
             .about("Model registry CLI")
             .arg(bucket_arg())
+            .arg(group_arg())
             .arg_required_else_help(true)
             .subcommand_required(true);
         for c in &self.commands {
@@ -147,12 +180,27 @@ pub fn bucket_arg() -> Arg {
         .help("S3 bucket name")
 }
 
+/// The group option shared by all commands: an optional prefix (e.g. `tts/sab`) put in
+/// front of the model name, so `-g tts/sab fastspeech` is the model `tts/sab/fastspeech`.
+/// The bucket-level models.json stays at the top and lists the full model names.
+pub fn group_arg() -> Arg {
+    Arg::new("group")
+        .short('g')
+        .long("group")
+        .env("MR_GROUP")
+        .global(true)
+        .help("Group (key prefix) of the models in the bucket, e.g. tts/sab")
+}
+
 /// Parses `args` (starting with the command name) the way the real CLI does, so shared
 /// global options are available; returns the command's matches.
 #[cfg(test)]
 pub fn parse_for_test(def: ClapCommand, args: &[&str]) -> Result<ArgMatches, clap::Error> {
     let name = def.get_name().to_string();
-    let root = ClapCommand::new("mr").arg(bucket_arg()).subcommand(def);
+    let root = ClapCommand::new("mr")
+        .arg(bucket_arg())
+        .arg(group_arg())
+        .subcommand(def);
     let all: Vec<&str> = std::iter::once("mr").chain(args.iter().copied()).collect();
     let m = root.try_get_matches_from(all)?;
     let (n, sub) = m.subcommand().expect("subcommand");

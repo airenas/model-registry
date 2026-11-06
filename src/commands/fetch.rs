@@ -1,5 +1,5 @@
 use super::{
-    BUCKET_REQUIRED, CmdResult, Command, StorageFactory, jobs_arg, s3_factory,
+    CmdResult, Command, StorageFactory, jobs_arg, model_arg, open_storage, s3_factory,
     status as status_prefix,
 };
 use crate::models::ModelRef;
@@ -60,15 +60,12 @@ impl Command for Fetch {
     }
 
     fn run(&self, args: &ArgMatches, out: &mut dyn Write) -> CmdResult {
-        let (model, version) = ModelRef::parse_with_version(
-            args.get_one::<String>("model").ok_or("model is required")?,
-        )?;
+        let (model, version) = ModelRef::parse_with_version(&model_arg(args)?)?;
         let version = version.as_str();
         let dir = args.get_one::<PathBuf>("dir").ok_or("dir is required")?;
-        let bucket = args.get_one::<String>("bucket").ok_or(BUCKET_REQUIRED)?;
 
         validate_version(version)?;
-        let storage = (self.factory)(bucket)?;
+        let storage = open_storage(&self.factory, args)?;
         let jobs = (*args.get_one::<usize>("jobs").ok_or("jobs is required")?).clamp(1, 64);
         fetch(
             storage.as_ref(),

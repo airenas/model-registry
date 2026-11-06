@@ -1,6 +1,6 @@
-use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, s3_factory};
+use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, open_storage, s3_factory};
 use crate::models::consts::ARTIFACTS_FILE;
-use crate::models::index;
+use crate::models::index::{self, ModelEntry};
 use crate::models::versions::{self, LATEST_ALIAS, Versions, versions_key};
 use crate::models::{ModelRef, artifacts, lock_key};
 use crate::storage::Storage;
@@ -51,11 +51,12 @@ impl Command for List {
 
     fn run(&self, args: &ArgMatches, out: &mut dyn Write) -> CmdResult {
         let bucket = args.get_one::<String>("bucket").ok_or(BUCKET_REQUIRED)?;
-        let storage = (self.factory)(bucket)?;
+        let storage = open_storage(&self.factory, args)?;
         let Some(target) = args.get_one::<String>("model") else {
-            return list_models(storage.as_ref(), bucket, args.get_flag("full"), out);
+            let group = super::group(args);
+            return list_models(storage.as_ref(), bucket, group, args.get_flag("full"), out);
         };
-        let ModelRef { model, version } = ModelRef::parse(target)?;
+        let ModelRef { model, version } = ModelRef::parse(&super::grouped(args, target))?;
         let model = &model;
         let key = versions_key(model)?;
         if !storage.exists(&key)? {
@@ -236,8 +237,15 @@ fn show_version(
     Ok(())
 }
 
-/// Models from the bucket's models.json; a bucket without one has no models.
-fn list_models(storage: &dyn Storage, bucket: &str, full: bool, out: &mut dyn Write) -> CmdResult {
+/// Models from the bucket's models.json (a bucket without one has no models), limited to
+/// the group and shown without the group prefix.
+fn list_models(
+    storage: &dyn Storage,
+    bucket: &str,
+    group: &str,
+    full: bool,
+    out: &mut dyn Write,
+) -> CmdResult {
     let key = index::models_key();
     let entries = if storage.exists(key)? {
         index::parse(&storage.get(key)?)
@@ -246,8 +254,9 @@ fn list_models(storage: &dyn Storage, bucket: &str, full: bool, out: &mut dyn Wr
     } else {
         Vec::new()
     };
+    let entries = in_group(entries, group);
     if entries.is_empty() {
-        writeln!(out, "No models in {bucket}")?;
+        writeln!(out, "No models in {}", bucket_group_name(bucket, group))?;
         return Ok(());
     }
     if !full {
@@ -270,6 +279,27 @@ fn list_models(storage: &dyn Storage, bucket: &str, full: bool, out: &mut dyn Wr
     }
     write_table_with(out, &rows, Some(console::Style::new().bold()))?;
     Ok(())
+}
+
+fn in_group(entries: Vec<ModelEntry>, group: &str) -> Vec<ModelEntry> {
+    if group.is_empty() {
+        return entries;
+    }
+    let prefix = format!("{group}/");
+    entries
+        .into_iter()
+        .filter_map(|mut e| {
+            e.name = e.name.strip_prefix(&prefix)?.to_string();
+            Some(e)
+        })
+        .collect()
+}
+
+fn bucket_group_name(bucket: &str, group: &str) -> String {
+    if group.is_empty() {
+        return bucket.to_string();
+    }
+    format!("{bucket}/{group}")
 }
 
 fn one_line(s: &str) -> String {
@@ -348,7 +378,7 @@ fn write_table_with(
 mod tests {
     use core::str;
 
-use super::*;
+    use super::*;
     use crate::storage::{Storage, mem::MemStorage};
     use googletest::assert_that;
     use googletest::prelude::*;
@@ -463,11 +493,20 @@ use super::*;
         .unwrap();
         let out = run(&mem).unwrap();
         let stripped = console::strip_ansi_codes(&out);
-        assert_that!(stripped, contains_substring("VERSION  CREATED               MESSAGE\n"));
-        assert_that!(stripped, contains_substring("v1       2026-11-05T09:59:00Z  changed model type\n"));
+        assert_that!(
+            stripped,
+            contains_substring("VERSION  CREATED               MESSAGE\n")
+        );
+        assert_that!(
+            stripped,
+            contains_substring("v1       2026-11-05T09:59:00Z  changed model type\n")
+        );
         let full = run_args(&mem, &["--full"]).unwrap();
         let stripped = console::strip_ansi_codes(&full);
-        assert_that!(stripped, contains_substring("0.1.0         changed model type\n"));
+        assert_that!(
+            stripped,
+            contains_substring("0.1.0         changed model type\n")
+        );
     }
 
     #[test]
@@ -496,10 +535,10 @@ use super::*;
         // folders without an entry in the index are not listed
         mem.put("c/versions.json", b"{}").unwrap();
         let mut out = Vec::new();
-        list_models(&mem, "b", false, &mut out).unwrap();
+        list_models(&mem, "b", "", false, &mut out).unwrap();
         assert_eq!(String::from_utf8(out).unwrap(), "a\nb\n");
         let mut out = Vec::new();
-        list_models(&mem, "b", true, &mut out).unwrap();
+        list_models(&mem, "b", "", true, &mut out).unwrap();
         let out = String::from_utf8(out).unwrap();
         assert_that!(
             console::strip_ansi_codes(&out),
@@ -509,11 +548,27 @@ use super::*;
     }
 
     #[test]
+    fn lists_models_of_group() {
+        let mem = MemStorage::default();
+        mem.put(
+            "models.json",
+            br#"{"tool_version":"0.1.0","created_at":"t","models":[
+              {"name":"a","created_at":"x"},
+              {"name":"tts/me/m1","created_at":"x"},
+              {"name":"tts/other/m2","created_at":"x"}]}"#,
+        )
+        .unwrap();
+        let mut out = Vec::new();
+        list_models(&mem, "b", "tts/me", false, &mut out).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), "m1\n");
+    }
+
+    #[test]
     fn no_models() {
         let mem = MemStorage::default();
         mem.put("junk/file.bin", b"x").unwrap();
         let mut out = Vec::new();
-        list_models(&mem, "b", false, &mut out).unwrap();
+        list_models(&mem, "b", "", false, &mut out).unwrap();
         assert_eq!(String::from_utf8(out).unwrap(), "No models in b\n");
     }
 

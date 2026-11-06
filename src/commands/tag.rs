@@ -1,4 +1,4 @@
-use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, s3_factory};
+use super::{CmdResult, Command, StorageFactory, model_arg, open_storage, s3_factory};
 use crate::models::artifacts::AliasLink;
 use crate::models::consts::ARTIFACTS_FILE;
 use crate::models::versions::{
@@ -57,11 +57,8 @@ impl Command for Tag {
     }
 
     fn run(&self, args: &ArgMatches, out: &mut dyn Write) -> CmdResult {
-        let (model, version) = ModelRef::parse_with_version(
-            args.get_one::<String>("model").ok_or("model is required")?,
-        )?;
-        let bucket = args.get_one::<String>("bucket").ok_or(BUCKET_REQUIRED)?;
-        let storage = (self.factory)(bucket)?;
+        let (model, version) = ModelRef::parse_with_version(&model_arg(args)?)?;
+        let storage = open_storage(&self.factory, args)?;
         let storage = storage.as_ref();
         with_lock(storage, &lock_key(&model)?, || {
             match args.get_one::<String>("tag") {

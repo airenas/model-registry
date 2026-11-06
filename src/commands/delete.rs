@@ -1,4 +1,6 @@
-use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, s3_factory};
+use super::{
+    BUCKET_REQUIRED, CmdResult, Command, StorageFactory, model_arg, open_storage, s3_factory,
+};
 use crate::commands::status;
 use crate::models::versions::{self, validate_version, versions_key};
 use crate::models::{ModelRef, lock_key, model_prefix};
@@ -53,12 +55,10 @@ impl Command for Delete {
     }
 
     fn run(&self, args: &ArgMatches, out: &mut dyn Write) -> CmdResult {
-        let (model, version) = ModelRef::parse_with_version(
-            args.get_one::<String>("model").ok_or("model is required")?,
-        )?;
+        let (model, version) = ModelRef::parse_with_version(&model_arg(args)?)?;
         let (model, version) = (model.as_str(), version.as_str());
         let bucket = args.get_one::<String>("bucket").ok_or(BUCKET_REQUIRED)?;
-        let storage = (self.factory)(bucket)?;
+        let storage = open_storage(&self.factory, args)?;
         let confirm: &mut dyn FnMut() -> bool = if args.get_flag("yes") {
             &mut || true
         } else {
