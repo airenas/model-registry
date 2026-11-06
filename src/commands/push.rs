@@ -251,6 +251,7 @@ fn push(
     let artifacts = Artifacts {
         version: version.to_string(),
         message: message.clone(),
+        model: model.to_string(),
         files: files.iter().map(|f| f.artifact.clone()).collect(),
     };
     let entry = Version {

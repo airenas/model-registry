@@ -103,8 +103,12 @@ fn fetch(
     let entry = list.find(version).ok_or("version not found")?;
 
     let akey = format!("{}/{ARTIFACTS_FILE}", entry.path);
-    let remote: Artifacts =
+    let mut remote: Artifacts =
         serde_json::from_slice(&storage.get(&akey)?).map_err(|e| format!("invalid {akey}: {e}"))?;
+    // versions pushed before the model was recorded have no model in artifacts.json
+    if remote.model.is_empty() {
+        remote.model = model.to_string();
+    }
     if remote.version != version {
         return Err(format!(
             "{akey} is for version '{}', expected '{version}'",
@@ -118,7 +122,14 @@ fn fetch(
     let local = if local_path.exists() {
         let l: Artifacts = serde_json::from_slice(&fs::read(&local_path)?)
             .map_err(|e| format!("invalid {}: {e}", local_path.display()))?;
-        if l.version == version {
+        if !l.model.is_empty() && l.model != model {
+            return Err(format!(
+                "{} contains model '{}', requested '{model}'; use another directory",
+                dir.display(),
+                l.model
+            )
+            .into());
+        } else if l.version == version {
             Some(l)
         } else if force {
             // overwrite: treat the directory as not fetched yet, files are compared below;
@@ -352,7 +363,7 @@ mod tests {
         )
         .unwrap();
         let artifacts = format!(
-            r#"{{"version":"v1","files":[{{"path":"a.bin","size":5,"modified_at":"x","blake3":"{}"}},
+            r#"{{"version":"v1","model":"m","files":[{{"path":"a.bin","size":5,"modified_at":"x","blake3":"{}"}},
                 {{"path":"sub/b.txt","size":2,"modified_at":"x","blake3":"{}"}}]}}"#,
             h(b"hello"),
             h(b"hi")

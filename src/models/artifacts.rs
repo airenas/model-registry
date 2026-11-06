@@ -17,6 +17,8 @@ pub struct Artifact {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Artifacts {
     pub version: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub model: String,
     /// Free text describing what changed in this version.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub message: String,
