@@ -1,9 +1,11 @@
 use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, s3_factory};
 use crate::commands::status;
+use crate::models::consts::MODELS_LOCK;
 use crate::models::index::{self, ModelEntry, ModelsIndex};
-use crate::models::model_prefix;
 use crate::models::versions::{Versions, versions_key};
+use crate::models::{lock_key, model_prefix};
 use crate::storage::Storage;
+use crate::storage::lock::with_lock;
 use chrono::{DateTime, SecondsFormat, Utc};
 use clap::{Arg, ArgMatches, Command as ClapCommand};
 use std::io::Write;
@@ -56,7 +58,10 @@ impl Command for Init {
             .get_one::<String>("description")
             .map(|m| m.trim())
             .unwrap_or_default();
-        init(storage.as_ref(), model, &key, description, Utc::now())?;
+        let storage = storage.as_ref();
+        with_lock(storage, &lock_key(model)?, || {
+            init(storage, model, &key, description, Utc::now())
+        })?;
         writeln!(out, "{}: s3://{bucket}/{key}", status("Initialized model"))?;
         Ok(())
     }
@@ -77,19 +82,22 @@ fn init(
     versions.description = description.to_string();
     storage.put(key, &serde_json::to_vec_pretty(&versions)?)?;
 
-    let index_key = index::models_key();
-    let mut models = if storage.exists(index_key)? {
-        index::parse(&storage.get(index_key)?).map_err(|e| format!("invalid {index_key}: {e}"))?
-    } else {
-        ModelsIndex::new(created_at.clone())
-    };
-    models.upsert(ModelEntry {
-        name: model_prefix(model)?,
-        created_at,
-        description: description.to_string(),
-    });
-    storage.put(index_key, &serde_json::to_vec_pretty(&models)?)?;
-    Ok(())
+    with_lock(storage, MODELS_LOCK, || {
+        let index_key = index::models_key();
+        let mut models = if storage.exists(index_key)? {
+            index::parse(&storage.get(index_key)?)
+                .map_err(|e| format!("invalid {index_key}: {e}"))?
+        } else {
+            ModelsIndex::new(created_at.clone())
+        };
+        models.upsert(ModelEntry {
+            name: model_prefix(model)?,
+            created_at,
+            description: description.to_string(),
+        });
+        storage.put(index_key, &serde_json::to_vec_pretty(&models)?)?;
+        Ok(())
+    })
 }
 
 #[cfg(test)]

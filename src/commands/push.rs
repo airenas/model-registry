@@ -3,9 +3,10 @@ use crate::models::artifacts::{Artifact, Artifacts};
 use crate::models::consts::TOOL_VERSION;
 use crate::models::consts::{ARTIFACTS_FILE, LOCAL_DIR};
 use crate::models::versions::{AUTO_VERSION, Version, Versions, validate_version, versions_key};
-use crate::models::{ModelRef, versions};
+use crate::models::{ModelRef, lock_key, versions};
 use crate::parallel;
 use crate::progress::{Progress, speed};
+use crate::storage::lock::with_lock;
 use crate::storage::{self, Storage};
 use chrono::{DateTime, SecondsFormat, Utc};
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
@@ -107,15 +108,14 @@ impl Command for Push {
         }
         let files = scan(dir)?;
         let storage = (self.factory)(bucket)?;
-        push(
-            storage.as_ref(),
-            &model,
-            version,
-            files,
-            opts,
-            Utc::now(),
-            out,
-        )
+        let storage = storage.as_ref();
+        let dry = opts.dry;
+        let run = || push(storage, &model, version, files, opts, Utc::now(), out);
+        if dry {
+            run()
+        } else {
+            with_lock(storage, &lock_key(&model)?, run)
+        }
     }
 }
 
@@ -517,6 +517,33 @@ mod tests {
         let mut out = Vec::new();
         push(mem, "m", "auto", scan(dir).unwrap(), opts, now(), &mut out).unwrap();
         String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn locked_model_rejects_push_but_not_dry_run() {
+        let (mem, dir) = (init_mem(), sample_dir());
+        let lock = format!(
+            r#"{{"id":"x","owner":"bob@pc","acquired_at":{}}}"#,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        );
+        mem.put("m/.lock", lock.as_bytes()).unwrap();
+        let m = mem.clone();
+        let cmd = Push::with_factory(Box::new(move |_| {
+            Ok(Box::new(m.clone()) as Box<dyn Storage>)
+        }));
+        let run = |extra: &[&str]| {
+            let d = dir.path().to_str().unwrap();
+            let all = [&["push", "m:v1", d, "-b", "b"][..], extra].concat();
+            let args = crate::commands::parse_for_test(cmd.definition(), &all).unwrap();
+            cmd.run(&args, &mut Vec::new())
+        };
+        let err = run(&[]).unwrap_err().to_string();
+        assert!(err.contains("locked by bob@pc"), "{err}");
+        assert!(mem.list("m/v1/").unwrap().is_empty());
+        run(&["--dry"]).unwrap();
     }
 
     #[test]

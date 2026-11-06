@@ -1,8 +1,9 @@
 use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, s3_factory};
 use crate::commands::status;
 use crate::models::versions::{self, validate_version, versions_key};
-use crate::models::{ModelRef, model_prefix};
+use crate::models::{ModelRef, lock_key, model_prefix};
 use crate::storage::Storage;
+use crate::storage::lock::with_lock;
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
 use std::io::{BufRead, Write};
 
@@ -63,14 +64,14 @@ impl Command for Delete {
         } else {
             &mut || ask(&format!("Delete {model}/{version} from {bucket}? [y/N] "))
         };
-        delete(
-            storage.as_ref(),
-            model,
-            version,
-            args.get_flag("dry"),
-            confirm,
-            out,
-        )
+        let storage = storage.as_ref();
+        let dry = args.get_flag("dry");
+        let mut run = move || delete(storage, model, version, dry, confirm, out);
+        if dry {
+            run()
+        } else {
+            with_lock(storage, &lock_key(model)?, run)
+        }
     }
 }
 

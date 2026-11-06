@@ -4,8 +4,9 @@ use crate::models::consts::ARTIFACTS_FILE;
 use crate::models::versions::{
     self, LATEST_ALIAS, Tag as TagEntry, validate_version, versions_key,
 };
-use crate::models::{ModelRef, model_prefix};
+use crate::models::{ModelRef, lock_key, model_prefix};
 use crate::storage::Storage;
+use crate::storage::lock::with_lock;
 use chrono::{SecondsFormat, Utc};
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
 use std::io::Write;
@@ -61,11 +62,14 @@ impl Command for Tag {
         )?;
         let bucket = args.get_one::<String>("bucket").ok_or(BUCKET_REQUIRED)?;
         let storage = (self.factory)(bucket)?;
-        match args.get_one::<String>("tag") {
-            Some(tag) => set(storage.as_ref(), &model, tag, &version, out),
-            // with --delete the "version" part is the tag to remove
-            None => remove(storage.as_ref(), &model, &version, out),
-        }
+        let storage = storage.as_ref();
+        with_lock(storage, &lock_key(&model)?, || {
+            match args.get_one::<String>("tag") {
+                Some(tag) => set(storage, &model, tag, &version, out),
+                // with --delete the "version" part is the tag to remove
+                None => remove(storage, &model, &version, out),
+            }
+        })
     }
 }
 

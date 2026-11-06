@@ -16,6 +16,11 @@ pub fn model_prefix(model: &str) -> Result<String, String> {
     Ok(model.to_string())
 }
 
+/// Lock object guarding a model's versions.json and version folders.
+pub fn lock_key(model: &str) -> Result<String, String> {
+    Ok(format!("{}/{}", model_prefix(model)?, consts::LOCK_FILE))
+}
+
 /// A command line reference: `model` or `model:version` (the version may be a tag or `latest`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelRef {

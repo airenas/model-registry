@@ -234,7 +234,10 @@ fn parse_semver(s: &str) -> Option<(u64, u64, u64)> {
 pub fn validate_version(version: &str) -> Result<(), String> {
     if version.is_empty()
         || version.contains(['/', ':'])
-        || matches!(version, "." | ".." | VERSIONS_FILE | AUTO_VERSION)
+        || matches!(
+            version,
+            "." | ".." | VERSIONS_FILE | LOCK_FILE | AUTO_VERSION
+        )
     {
         return Err(format!("invalid version name '{version}'"));
     }
