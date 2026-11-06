@@ -1,5 +1,6 @@
 use super::{BUCKET_REQUIRED, CmdResult, Command, StorageFactory, s3_factory};
 use crate::models::consts::ARTIFACTS_FILE;
+use crate::models::index::{self, ModelEntry};
 use crate::models::versions::{self, LATEST_ALIAS, Versions, versions_key};
 use crate::models::{ModelRef, artifacts};
 use crate::storage::Storage;
@@ -28,7 +29,7 @@ impl Default for List {
 
 impl Command for List {
     fn definition(&self) -> ClapCommand {
-        ClapCommand::new("list")
+        ClapCommand::new("ls")
             .about("List the models in the bucket; `model` lists its versions, `model:version` shows that version")
             .arg(
                 Arg::new("model")
@@ -42,6 +43,7 @@ impl Command for List {
             .arg(
                 Arg::new("full")
                     .long("full")
+                    .short('f')
                     .action(ArgAction::SetTrue)
                     .help("Also show path, file count and total size"),
             )
@@ -223,45 +225,61 @@ fn show_version(
     Ok(())
 }
 
-/// Top-level folders that contain a versions.json, i.e. initialized models.
+/// Models from the bucket's models.json. Buckets without one (initialized by older
+/// versions) fall back to scanning for top-level folders that contain a versions.json.
 fn list_models(storage: &dyn Storage, bucket: &str, full: bool, out: &mut dyn Write) -> CmdResult {
-    let mut rows = vec![if full {
-        ["MODEL", "VERSIONS", "LATEST", "DESCRIPTION"]
-            .map(String::from)
-            .to_vec()
+    let key = index::models_key();
+    let entries = if storage.exists(key)? {
+        index::parse(&storage.get(key)?)
+            .map_err(|e| format!("invalid {key}: {e}"))?
+            .models
     } else {
-        vec!["MODEL".to_string()]
-    }];
+        scan_models(storage)?
+    };
+    if entries.is_empty() {
+        writeln!(out, "No models in {bucket}")?;
+        return Ok(());
+    }
+    if !full {
+        for e in &entries {
+            writeln!(out, "{}", e.name)?;
+        }
+        return Ok(());
+    }
+    let mut rows = vec![
+        ["MODEL", "CREATED", "DESCRIPTION"]
+            .map(String::from)
+            .to_vec(),
+    ];
+    for e in &entries {
+        rows.push(vec![
+            e.name.clone(),
+            e.created_at.clone(),
+            one_line(&e.description),
+        ]);
+    }
+    write_table_with(out, &rows, Some(console::Style::new().bold()))?;
+    Ok(())
+}
+
+fn scan_models(storage: &dyn Storage) -> Result<Vec<ModelEntry>, Box<dyn std::error::Error>> {
+    let mut entries = Vec::new();
     for name in storage.list_dirs("")? {
         let key = versions_key(&name)?;
         if !storage.exists(&key)? {
             continue;
         }
-        let mut row = vec![name];
-        if full {
-            match versions::parse(&storage.get(&key)?) {
-                Ok(v) => row.extend([
-                    v.versions.len().to_string(),
-                    v.latest_model_version.clone(),
-                    one_line(&v.description),
-                ]),
-                Err(_) => row.extend(["?".into(), "?".into(), "(invalid versions.json)".into()]),
-            }
-        }
-        rows.push(row);
+        let (created_at, description) = match versions::parse(&storage.get(&key)?) {
+            Ok(v) => (v.created_at, v.description),
+            Err(_) => (String::new(), "(invalid versions.json)".into()),
+        };
+        entries.push(ModelEntry {
+            name,
+            created_at,
+            description,
+        });
     }
-    if rows.len() == 1 {
-        writeln!(out, "No models in {bucket}")?;
-        return Ok(());
-    }
-    if full {
-        write_table(out, &rows)?;
-    } else {
-        for r in &rows[1..] {
-            writeln!(out, "{}", r[0])?;
-        }
-    }
-    Ok(())
+    Ok(entries)
 }
 
 fn one_line(s: &str) -> String {
@@ -297,10 +315,6 @@ fn grey(text: &str) -> String {
 
 fn lbl(label: &str) -> String {
     grey(label)
-}
-
-fn write_table(out: &mut dyn Write, rows: &[Vec<String>]) -> std::io::Result<()> {
-    write_table_with(out, rows, None)
 }
 
 /// With `first_col` set, the first column of the body rows is styled (padding stays unstyled).
@@ -465,8 +479,32 @@ mod tests {
         };
         assert_eq!(args(&["list", "-b", "b"]), "asr\ntagger\n");
         let full = args(&["list", "-b", "b", "--full"]);
-        assert!(full.starts_with("MODEL   VERSIONS  LATEST  DESCRIPTION\n"));
-        assert!(full.contains("tagger  1         v2      pos tagger\n"));
+        assert!(full.starts_with("MODEL   CREATED  DESCRIPTION\n"));
+        assert!(full.contains("tagger  x        pos tagger\n"));
+    }
+
+    #[test]
+    fn lists_models_from_index() {
+        let mem = MemStorage::default();
+        mem.put(
+            "models.json",
+            br#"{"tool_version":"0.1.0","created_at":"t","models":[
+              {"name":"a","created_at":"2026-11-05T10:00:00Z","description":"first"},
+              {"name":"b","created_at":"2026-11-06T10:00:00Z"}]}"#,
+        )
+        .unwrap();
+        // folders without an entry in the index are not listed
+        mem.put("c/versions.json", b"{}").unwrap();
+        let mut out = Vec::new();
+        list_models(&mem, "b", false, &mut out).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), "a\nb\n");
+        let mut out = Vec::new();
+        list_models(&mem, "b", true, &mut out).unwrap();
+        let out = String::from_utf8(out).unwrap();
+        assert!(
+            out.contains("a      2026-11-05T10:00:00Z  first\n"),
+            "{out}"
+        );
     }
 
     #[test]

@@ -4,4 +4,4 @@ pub mod parallel;
 pub mod progress;
 pub mod storage;
 
-pub use commands::list::human_size;
+pub use commands::ls::human_size;

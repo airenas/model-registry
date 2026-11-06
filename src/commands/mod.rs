@@ -4,7 +4,7 @@ pub mod delete;
 pub mod fetch;
 pub mod info;
 pub mod init;
-pub mod list;
+pub mod ls;
 pub mod push;
 pub mod tag;
 pub mod version;
@@ -60,7 +60,7 @@ impl Registry {
         r.register(Box::new(fetch::Fetch::new()));
         r.register(Box::new(info::Info::new()));
         r.register(Box::new(init::Init::new()));
-        r.register(Box::new(list::List::new()));
+        r.register(Box::new(ls::List::new()));
         r.register(Box::new(push::Push::new()));
         r.register(Box::new(version::Version::new()));
         r
