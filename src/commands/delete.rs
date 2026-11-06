@@ -73,7 +73,7 @@ impl Command for Delete {
     }
 }
 
-fn ask(question: &str) -> bool {
+pub(super) fn ask(question: &str) -> bool {
     eprint!("{question}");
     let mut line = String::new();
     std::io::stdin().lock().read_line(&mut line).is_ok()

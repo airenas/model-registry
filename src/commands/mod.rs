@@ -113,6 +113,13 @@ pub fn status(verb: &str) -> String {
     )
 }
 
+pub fn warning_prefix() -> String {
+    format!(
+        "{} ",
+        console::Style::new().yellow().bold().apply_to("warning:")
+    )
+}
+
 pub const BUCKET_REQUIRED: &str = "bucket is required (use -b/--bucket or set MR_BUCKET)";
 
 /// The bucket option shared by all commands. It is global, so it can be given before or
@@ -153,9 +160,9 @@ mod tests {
     fn bucket_is_global() {
         let cli = Registry::default_commands().cli();
         for args in [
-            ["mr", "-b", "x", "list", "m"],
-            ["mr", "list", "m", "-b", "x"],
-            ["mr", "list", "m", "--bucket=x", "--full"],
+            ["mr", "-b", "x", "ls", "m"],
+            ["mr", "ls", "m", "-b", "x"],
+            ["mr", "ls", "m", "--bucket=x", "--full"],
         ] {
             let m = cli.clone().try_get_matches_from(args).unwrap();
             let (_, sub) = m.subcommand().unwrap();

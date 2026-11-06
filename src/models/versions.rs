@@ -141,6 +141,54 @@ impl Versions {
         Ok(format!("{prefix}{}", numbers.join(".")))
     }
 
+    /// Advice for a manually chosen version name; empty if it follows `vX.Y.Z` numbering
+    /// relative to the latest version.
+    pub fn version_warnings(&self, new: &str) -> Vec<String> {
+        let Some(n) = parse_semver(new) else {
+            return vec![format!("version '{new}' is not of the format vX.Y.Z")];
+        };
+        // an older, non-vX.Y.Z latest gives nothing to compare with
+        let Some(l) = parse_semver(&self.latest_model_version) else {
+            return Vec::new();
+        };
+        let latest = &self.latest_model_version;
+        let mut w = Vec::new();
+        if n.0 > l.0 {
+            if n.0 != l.0 + 1 {
+                w.push(format!(
+                    "major version jumps by more than 1 ({latest} -> {new})"
+                ));
+            }
+            if n.1 != 0 || n.2 != 0 {
+                w.push(format!(
+                    "major version increased ({latest} -> {new}), y and z are expected to be 0"
+                ));
+            }
+        } else if n.0 < l.0 {
+            w.push(format!("version {new} is lower than the latest {latest}"));
+        } else if n.1 > l.1 {
+            if n.1 != l.1 + 1 {
+                w.push(format!(
+                    "minor version jumps by more than 1 ({latest} -> {new})"
+                ));
+            }
+            if n.2 != 0 {
+                w.push(format!(
+                    "minor version increased ({latest} -> {new}), z is expected to be 0"
+                ));
+            }
+        } else if n.1 < l.1 {
+            w.push(format!("version {new} is lower than the latest {latest}"));
+        } else if n.2 != l.2 + 1 {
+            w.push(format!(
+                "patch version is expected to be {} after {latest}, got {}",
+                l.2 + 1,
+                n.2
+            ));
+        }
+        w
+    }
+
     /// Appends a version and marks it as the latest.
     pub fn add(&mut self, entry: Version) {
         self.latest_model_version = entry.version.clone();
@@ -169,6 +217,20 @@ pub const FIRST_VERSION: &str = "v0.0.1";
 
 pub const LATEST_ALIAS: &str = "latest";
 
+/// `vX.Y.Z` with numeric parts.
+fn parse_semver(s: &str) -> Option<(u64, u64, u64)> {
+    let mut it = s.strip_prefix('v')?.split('.');
+    let mut num = || {
+        let p = it.next()?;
+        if p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        p.parse::<u64>().ok()
+    };
+    let r = (num()?, num()?, num()?);
+    it.next().is_none().then_some(r)
+}
+
 pub fn validate_version(version: &str) -> Result<(), String> {
     if version.is_empty()
         || version.contains(['/', ':'])
@@ -196,6 +258,38 @@ mod tests {
         let mut v = Versions::new("2026-11-05T09:00:00Z".into());
         v.latest_model_version = latest.into();
         v
+    }
+
+    #[test]
+    fn version_warnings() {
+        let w = |latest: &str, new: &str| with_latest(latest).version_warnings(new).len();
+        // follows the numbering
+        assert_eq!(w("", "v0.0.1"), 0);
+        assert_eq!(w("v1.2.3", "v1.2.4"), 0);
+        assert_eq!(w("v1.2.3", "v1.3.0"), 0);
+        assert_eq!(w("v1.2.3", "v2.0.0"), 0);
+        // format
+        assert_eq!(w("v1.2.3", "1.2.4"), 1);
+        assert_eq!(w("v1.2.3", "v1.2"), 1);
+        assert_eq!(w("v1.2.3", "v1.2.x"), 1);
+        assert_eq!(w("v1.2.3", "v1.2.4.5"), 1);
+        assert_eq!(w("", "model-a"), 1);
+        // patch must be +1
+        assert_eq!(w("v1.2.3", "v1.2.5"), 1);
+        assert_eq!(w("v1.2.3", "v1.2.3"), 1);
+        // minor +1 needs z = 0
+        assert_eq!(w("v1.2.3", "v1.3.1"), 1);
+        // major increase needs y = 0 and z = 0
+        assert_eq!(w("v1.2.3", "v2.0.1"), 1);
+        assert_eq!(w("v1.2.3", "v2.1.0"), 1);
+        // going back or skipping
+        assert_eq!(w("v1.2.3", "v1.1.0"), 1);
+        assert_eq!(w("v1.2.3", "v0.9.9"), 1);
+        assert_eq!(w("v1.2.3", "v1.4.0"), 1);
+        assert_eq!(w("v1.2.3", "v3.0.0"), 1);
+        assert_eq!(w("v1.2.3", "v3.1.0"), 2);
+        // nothing to compare with
+        assert_eq!(w("best", "v1.0.0"), 0);
     }
 
     #[test]

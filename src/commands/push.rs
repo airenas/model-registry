@@ -71,6 +71,13 @@ impl Command for Push {
                     .long("message")
                     .help("Note describing what changed in this version"),
             )
+            .arg(
+                Arg::new("yes")
+                    .short('y')
+                    .long("yes")
+                    .action(ArgAction::SetTrue)
+                    .help("Do not ask for confirmation when the version name gets a warning"),
+            )
             .arg(jobs_arg())
     }
 
@@ -89,6 +96,8 @@ impl Command for Push {
                 .unwrap_or_default(),
             dry: args.get_flag("dry"),
             force: args.get_flag("force"),
+            yes: args.get_flag("yes"),
+            ask: super::delete::ask,
             jobs: (*args.get_one::<usize>("jobs").ok_or("jobs is required")?).clamp(1, 64),
         };
 
@@ -115,6 +124,9 @@ struct Options {
     message: String,
     dry: bool,
     force: bool,
+    /// Skip the question after version warnings.
+    yes: bool,
+    ask: fn(&str) -> bool,
     jobs: usize,
 }
 
@@ -194,13 +206,16 @@ fn push(
         message,
         dry,
         force,
+        yes,
+        ask,
         jobs,
     } = opts;
     let progress_on = std::io::stderr().is_terminal();
     let versions_key = versions_key(model)?;
 
     let existing = read_versions(storage, &versions_key)?;
-    let version = if version == AUTO_VERSION {
+    let auto = version == AUTO_VERSION;
+    let version = if auto {
         existing.next_version()?
     } else {
         version.to_string()
@@ -212,6 +227,18 @@ fn push(
     }
     if existing.find(version).is_some() {
         return Err(format!("version '{version}' already exists").into());
+    }
+    if !auto {
+        let warnings = existing.version_warnings(version);
+        for w in &warnings {
+            writeln!(out, "{}{w}", super::warning_prefix())?;
+        }
+        if !warnings.is_empty() && !dry && !yes {
+            out.flush()?;
+            if !ask(&format!("Push {version} anyway? [y/N] ")) {
+                return Err("aborted".into());
+            }
+        }
     }
     let leftovers = storage.list(&format!("{prefix}/"))?.len();
     if leftovers > 0 && !force {
@@ -387,6 +414,8 @@ mod tests {
                 message: String::new(),
                 dry,
                 force: false,
+                yes: true,
+                ask: |_| true,
                 jobs: 4,
             },
         )
@@ -481,11 +510,85 @@ mod tests {
             message: String::new(),
             dry: false,
             force: false,
+            yes: true,
+            ask: |_| true,
             jobs: 1,
         };
         let mut out = Vec::new();
         push(mem, "m", "auto", scan(dir).unwrap(), opts, now(), &mut out).unwrap();
         String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn asks_after_warning() {
+        let (mem, dir) = (init_mem(), sample_dir());
+        let go = |version: &str, yes: bool, ask: fn(&str) -> bool| {
+            let opts = Options {
+                message: String::new(),
+                dry: false,
+                force: false,
+                yes,
+                ask,
+                jobs: 1,
+            };
+            let mut out = Vec::new();
+            push(
+                &mem,
+                "m",
+                version,
+                scan(dir.path()).unwrap(),
+                opts,
+                now(),
+                &mut out,
+            )
+        };
+        go("v1.0.0", false, |_| panic!("no warning, no question")).unwrap();
+        let err = go("v1.0.5", false, |q| {
+            assert!(q.contains("Push v1.0.5 anyway? [y/N]"));
+            false
+        })
+        .unwrap_err();
+        assert_eq!(err.to_string(), "aborted");
+        let v = versions::parse(&mem.get("m/versions.json").unwrap()).unwrap();
+        assert!(v.find("v1.0.5").is_none());
+        assert!(mem.list("m/v1.0.5/").unwrap().is_empty());
+        go("v1.0.5", false, |_| true).unwrap();
+        go("v1.0.9", true, |_| panic!("--yes skips the question")).unwrap();
+    }
+
+    #[test]
+    fn warns_on_unusual_versions() {
+        let (mem, dir) = (init_mem(), sample_dir());
+        let go = |version: &str| {
+            let opts = Options {
+                message: String::new(),
+                dry: false,
+                force: false,
+                yes: true,
+                ask: |_| true,
+                jobs: 1,
+            };
+            let mut out = Vec::new();
+            push(
+                &mem,
+                "m",
+                version,
+                scan(dir.path()).unwrap(),
+                opts,
+                now(),
+                &mut out,
+            )
+            .unwrap();
+            String::from_utf8(out).unwrap()
+        };
+        assert!(!go("v1.0.0").contains("warning"));
+        let out = go("v1.0.5");
+        assert!(
+            out.contains("warning: patch version is expected to be 1"),
+            "{out}"
+        );
+        assert!(out.contains("Pushed v1.0.5"), "{out}");
+        assert!(go("v1.0.6").lines().all(|l| !l.contains("warning")));
     }
 
     #[test]
@@ -516,6 +619,8 @@ mod tests {
             message: "better loss function".into(),
             dry: false,
             force: false,
+            yes: true,
+            ask: |_| true,
             jobs: 1,
         };
         do_push_opts(&mem, "v1", dir.path(), opts).unwrap();
@@ -566,6 +671,8 @@ mod tests {
             message: String::new(),
             dry: false,
             force: true,
+            yes: true,
+            ask: |_| true,
             jobs: 2,
         };
         let out = do_push_opts(&mem, "v2", dir.path(), force).unwrap();
@@ -588,6 +695,8 @@ mod tests {
             message: String::new(),
             dry: true,
             force: true,
+            yes: true,
+            ask: |_| true,
             jobs: 1,
         };
         let out = do_push_opts(&mem, "v2", dir.path(), opts).unwrap();
