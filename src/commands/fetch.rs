@@ -56,6 +56,12 @@ impl Command for Fetch {
                     .action(ArgAction::SetTrue)
                     .help("Overwrite local files that differ from the registry"),
             )
+            .arg(
+                Arg::new("dry")
+                    .long("dry")
+                    .action(ArgAction::SetTrue)
+                    .help("Show what would be downloaded or removed without changing anything"),
+            )
             .arg(jobs_arg())
     }
 
@@ -72,8 +78,11 @@ impl Command for Fetch {
             &model,
             version,
             dir,
-            args.get_flag("force"),
-            jobs,
+            Options {
+                force: args.get_flag("force"),
+                dry: args.get_flag("dry"),
+                jobs,
+            },
             out,
         )
     }
@@ -83,15 +92,22 @@ fn local_artifacts_path(dir: &Path) -> PathBuf {
     dir.join(LOCAL_DIR).join(ARTIFACTS_FILE)
 }
 
+#[derive(Clone, Copy)]
+struct Options {
+    force: bool,
+    dry: bool,
+    jobs: usize,
+}
+
 fn fetch(
     storage: &dyn Storage,
     model: &str,
     version: &str,
     dir: &Path,
-    force: bool,
-    jobs: usize,
+    opts: Options,
     out: &mut dyn Write,
 ) -> CmdResult {
+    let Options { force, dry, jobs } = opts;
     let vkey = versions_key(model)?;
     if !storage.exists(&vkey)? {
         return Err(format!("model not initialized: {vkey} (run `mr init`)").into());
@@ -183,6 +199,29 @@ fn fetch(
                 .into());
             }
         }
+    }
+
+    if dry {
+        for a in &todo {
+            writeln!(out, "[dry] would download {} ({} bytes)", a.path, a.size)?;
+        }
+        if let Some(old) = &previous {
+            let keep: std::collections::HashSet<&str> =
+                remote.files.iter().map(|a| a.path.as_str()).collect();
+            for a in old.files.iter().filter(|a| !keep.contains(a.path.as_str())) {
+                if safe_relative(&a.path) && dir.join(&a.path).exists() {
+                    writeln!(out, "[dry] would remove {}", a.path)?;
+                }
+            }
+        }
+        writeln!(
+            out,
+            "[dry] would fetch {version}: {} of {} files to {}",
+            todo.len(),
+            remote.files.len(),
+            dir.display()
+        )?;
+        return Ok(());
     }
 
     let progress = if !todo.is_empty() && std::io::stderr().is_terminal() {
@@ -390,7 +429,12 @@ mod tests {
         force: bool,
     ) -> Result<String, Box<dyn std::error::Error>> {
         let mut out = Vec::new();
-        fetch(mem, "m", version, dir, force, 4, &mut out)?;
+        let opts = Options {
+            force,
+            dry: false,
+            jobs: 4,
+        };
+        fetch(mem, "m", version, dir, opts, &mut out)?;
         Ok(String::from_utf8(out)?)
     }
 
@@ -474,7 +518,12 @@ mod tests {
         let err = run(&mem, "v1", d.path()).unwrap_err().to_string();
         assert!(err.contains("--force"), "{err}");
         let mut out = Vec::new();
-        fetch(&mem, "m", "v1", d.path(), true, 1, &mut out).unwrap();
+        let opts = Options {
+            force: true,
+            dry: false,
+            jobs: 1,
+        };
+        fetch(&mem, "m", "v1", d.path(), opts, &mut out).unwrap();
         assert_eq!(fs::read(d.path().join("a.bin")).unwrap(), b"hello");
         assert!(!d.path().join("gone").exists());
         assert!(d.path().join("mine.txt").exists());
@@ -487,6 +536,22 @@ mod tests {
             serde_json::from_slice(&fs::read(d.path().join(".mr/artifacts.json")).unwrap())
                 .unwrap();
         assert_eq!(local.version, "v1");
+    }
+
+    #[test]
+    fn dry_run_changes_nothing() {
+        let d = tempfile::tempdir().unwrap();
+        let opts = Options {
+            force: false,
+            dry: true,
+            jobs: 1,
+        };
+        let mut out = Vec::new();
+        fetch(&pushed(), "m", "v1", d.path(), opts, &mut out).unwrap();
+        let out = String::from_utf8(out).unwrap();
+        assert!(out.contains("[dry] would download"), "{out}");
+        assert!(out.contains("[dry] would fetch v1"), "{out}");
+        assert_eq!(fs::read_dir(d.path()).unwrap().count(), 0);
     }
 
     #[test]
