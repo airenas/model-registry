@@ -104,7 +104,7 @@ fn delete(
     let aliases = versions.aliases_of(version);
     if !aliases.is_empty() {
         return Err(format!(
-            "version '{version}' is used by alias {}; remove the alias first (`mr alias --delete`)",
+            "version '{version}' is used by tag {}; remove the tag first (`mr tag --delete`)",
             aliases.join(", ")
         )
         .into());
@@ -215,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn refuses_aliased_version() {
+    fn refuses_taged_version() {
         let mem = setup();
         let mut v = versions(&mem);
         v.tags.insert(
