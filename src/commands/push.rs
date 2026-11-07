@@ -72,6 +72,7 @@ impl Command for Push {
                 Arg::new("message")
                     .short('m')
                     .long("message")
+                    .required(true)
                     .help("Note describing what changed in this version"),
             )
             .arg(
