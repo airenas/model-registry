@@ -20,6 +20,11 @@ serde_json = "1.0"
 tokio = { version = "1.54", features = ["rt-multi-thread", "sync", "fs", "io-util", "time", "macros"] }
 walkdir = "2.5"
 clap_complete = "4"
+arc-swap = "1.9"
+log = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1.0"
 
 
 [dev-dependencies]
@@ -33,3 +38,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "mr"
 path = "src/main.rs"
+
+[[bin]]
+name = "mr-simple-test"
+path = "src/example/simple/main.rs"

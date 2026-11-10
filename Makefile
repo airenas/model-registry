@@ -13,6 +13,10 @@ build/local:
 	cargo build --release
 .PHONY: build/local
 ###############################################################################
+build/lib: 
+	cargo build --lib --release
+.PHONY: build/lib
+###############################################################################
 test/unit:
 	RUST_LOG=DEBUG cargo test --no-fail-fast
 .PHONY: test/unit		

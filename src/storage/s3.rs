@@ -8,6 +8,7 @@ use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectI
 use bytes::Bytes;
 use futures_util::{StreamExt, TryStreamExt, stream};
 use std::fmt;
+use std::mem::ManuallyDrop;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -108,7 +109,7 @@ pub fn connection_info(bucket: Option<&str>) -> StorageResult<ConnectionInfo> {
 /// S3 storage for one bucket. Credentials/region come from the standard AWS
 /// chain (env vars such as AWS_ACCESS_KEY_ID, ~/.aws/credentials, AWS_PROFILE, ...).
 pub struct S3Storage {
-    rt: Runtime,
+    rt: ManuallyDrop<Runtime>,
     client: Client,
     bucket: String,
 }
@@ -391,10 +392,20 @@ impl S3Storage {
         let rt = Runtime::new()?;
         let cfg = rt.block_on(load_config());
         Ok(Self {
-            rt,
+            rt: ManuallyDrop::new(rt),
             client: s3_client(&cfg),
             bucket: bucket.to_string(),
         })
+    }
+}
+
+impl Drop for S3Storage {
+    /// Dropping a runtime inside an async context panics; shutting it down in the
+    /// background is safe from anywhere (the storage may be dropped by async code).
+    fn drop(&mut self) {
+        // SAFETY: `rt` is taken exactly once, here, and never used afterwards.
+        let rt = unsafe { ManuallyDrop::take(&mut self.rt) };
+        rt.shutdown_background();
     }
 }
 
